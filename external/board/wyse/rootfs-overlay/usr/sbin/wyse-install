@@ -1,0 +1,37 @@
+#!/bin/sh
+# Copy the running system to another disk (for example the eMMC).
+#   wyse-install /dev/mmcblk0
+# Copies the boot and root partitions. The persist and overlay partitions on
+# the target start empty and are created on its first boot. New partition
+# UUIDs are written so both disks can be plugged in at the same time.
+set -e
+dst=$1
+[ -b "$dst" ] || { echo "usage: wyse-install /dev/<disk>"; exit 1; }
+
+src=/dev/$(basename "$(dirname "$(readlink -f /sys/dev/block/$(mountpoint -d /rom))")")
+[ "$src" != "$dst" ] || { echo "$dst is the running disk"; exit 1; }
+
+echo "This erases everything on $dst. Type YES to continue."
+read -r ans
+[ "$ans" = YES ] || exit 1
+
+d=$(basename "$src")
+part_sysfs() { for p in /sys/block/$d/*/partition; do [ "$(cat "$p")" = "$1" ] && dirname "$p"; done; }
+p3=$(part_sysfs 3); p4=$(part_sysfs 4)
+p3start=$(cat "$p3/start"); p4start=$(cat "$p4/start")
+
+# Partition table + boot + root (everything before partition 3).
+dd if="$src" of="$dst" bs=512 count="$p3start" conv=fsync
+# Empty persist and overlay so the first boot formats them.
+dd if=/dev/zero of="$dst" bs=512 seek="$p3start" count=8192 conv=fsync
+dd if=/dev/zero of="$dst" bs=512 seek="$p4start" count=8192 conv=fsync
+
+# Fix the table for the target size and give it new UUIDs.
+sfdisk -q --relocate gpt-bak-std "$dst"
+echo ", 65536" | sfdisk -q --no-reread -N 4 "$dst"
+sfdisk -q --disk-id "$dst" "$(cat /proc/sys/kernel/random/uuid)"
+for n in 1 2 3 4; do
+	sfdisk -q --part-uuid "$dst" $n "$(cat /proc/sys/kernel/random/uuid)"
+done
+sync
+echo "Done. Remove the USB disk and reboot."

@@ -1,0 +1,16 @@
+# Secrets: never commit. They are baked into images built locally.
+.env
+keys/*
+!keys/README
+external/board/wyse/authorized_keys
+root_ca.crt
+
+# Build output and logs
+build.log
+drivers/out/
+saved-states/
+.DS_Store
+
+# Claude session moved from the old project (may contain secrets)
+.claude-transfer/
+.claude/settings.local.json

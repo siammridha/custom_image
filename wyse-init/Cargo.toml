@@ -1,0 +1,14 @@
+[package]
+name = "wyse-init"
+version = "0.1.0"
+edition = "2021"
+description = "Boot and service supervisor for the Wyse image (replaces the boot shell scripts)"
+
+# No dependencies: only std plus a few C library calls (see src/sys.rs).
+
+[profile.release]
+opt-level = "s"
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true

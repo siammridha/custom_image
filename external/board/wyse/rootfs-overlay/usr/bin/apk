@@ -1,0 +1,3 @@
+#!/bin/sh
+# apk runs inside /data/alpine only. The system itself never changes.
+exec /usr/sbin/alpine apk "$@"

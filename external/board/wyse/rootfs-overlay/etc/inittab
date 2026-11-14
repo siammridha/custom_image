@@ -1,0 +1,33 @@
+# /etc/inittab (BusyBox init)
+#
+# Startup: mounts, then wyse-init boot (persist folders, drivers,
+# host name, network, SSH keys).
+::sysinit:/bin/mount -t proc proc /proc
+::sysinit:/bin/mount -o remount,rw /
+::sysinit:/bin/mkdir -p /dev/pts /dev/shm
+::sysinit:/bin/mount -a
+::sysinit:/bin/mkdir -p /run/lock/subsys
+null::sysinit:/bin/ln -sf /proc/self/fd /dev/fd
+null::sysinit:/bin/ln -sf /proc/self/fd/0 /dev/stdin
+null::sysinit:/bin/ln -sf /proc/self/fd/1 /dev/stdout
+null::sysinit:/bin/ln -sf /proc/self/fd/2 /dev/stderr
+::sysinit:/sbin/wyse-init boot
+
+# Logs (in RAM).
+::respawn:/sbin/syslogd -n
+::respawn:/sbin/klogd -n
+
+# Remote access. init starts these after boot and starts them again
+# whenever one exits.
+::respawn:/sbin/wyse-init run watchdog
+::respawn:/sbin/wyse-init run netbird
+::respawn:/sbin/wyse-init run tailscaled
+::respawn:/sbin/wyse-init run dropbear
+::respawn:/sbin/wyse-init run ntpd
+::respawn:/sbin/wyse-init run vpn-guard
+
+# Apps from /data/services (low priority, RAM-limited).
+::respawn:/sbin/wyse-init run apps
+
+# Before rebooting
+::shutdown:/bin/umount -a -r

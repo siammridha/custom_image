@@ -1,0 +1,9 @@
+# Sourced by the init scripts: built-in defaults, then persistent overrides,
+# then the locked VPN settings from the read-only image (always last).
+. /etc/wyse/wyse.conf
+[ -r /persist/wyse.conf ] && . /persist/wyse.conf
+if [ -r /rom/etc/wyse/vpn.conf ]; then
+	. /rom/etc/wyse/vpn.conf
+else
+	. /etc/wyse/vpn.conf
+fi

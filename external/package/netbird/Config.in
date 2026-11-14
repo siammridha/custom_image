@@ -1,0 +1,8 @@
+config BR2_PACKAGE_NETBIRD
+	bool "netbird"
+	depends on BR2_PACKAGE_HOST_GO_TARGET_ARCH_SUPPORTS
+	select BR2_PACKAGE_HOST_GO
+	help
+	  NetBird client (built from source).
+
+	  https://github.com/netbirdio/netbird

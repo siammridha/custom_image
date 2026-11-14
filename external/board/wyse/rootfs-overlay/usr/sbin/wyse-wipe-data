@@ -1,0 +1,7 @@
+#!/bin/sh
+# Erase /data (all apps, apk packages and their files) on the next boot,
+# then reboot. The system, VPN identity and settings are kept.
+echo "This erases everything in /data. Type YES to continue."
+read -r ans
+[ "$ans" = YES ] || exit 1
+touch /persist/.wipe-data && sync && reboot

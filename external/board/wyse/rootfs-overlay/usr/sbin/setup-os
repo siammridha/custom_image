@@ -1,0 +1,58 @@
+#!/bin/sh
+# Set up this device, like Alpine's setup-alpine. Run: setup-os
+# Asks for the host name and network settings. Press Enter to keep the
+# value shown in [brackets]. Answers are saved in /persist/wyse.conf,
+# which survives reboots and updates.
+. /etc/wyse/load-config
+CONF=/persist/wyse.conf
+
+set_var() {
+	touch "$CONF"
+	sed -i "/^$1=/d" "$CONF"
+	echo "$1=\"$2\"" >> "$CONF"
+}
+
+ask() {
+	printf '%s [%s] ' "$1" "$2" >&2
+	read -r a || exit 1
+	echo "${a:-$2}"
+}
+
+# Host name
+while :; do
+	h=$(ask "Enter system hostname (short form, e.g. 'foo')" "$HOSTNAME") || exit 1
+	echo "$h" | grep -qE '^[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?$' && break
+	echo "Use letters, digits and '-' only (max 63, no '-' at the ends)." >&2
+done
+
+# Network
+while :; do
+	m=$(ask "Network mode (dhcp/static)" "$NET_MODE") || exit 1
+	case "$m" in dhcp|static) break ;; esac
+	echo "Type dhcp or static." >&2
+done
+if [ "$m" = static ]; then
+	addr=$(ask "IP address with prefix (e.g. 192.168.1.50/24)" "$NET_ADDR") || exit 1
+	gw=$(ask "Gateway" "$NET_GW") || exit 1
+	dns=$(ask "DNS nameservers (space separated)" "$NET_DNS") || exit 1
+fi
+
+set_var HOSTNAME "$h"
+set_var NET_MODE "$m"
+if [ "$m" = static ]; then
+	set_var NET_ADDR "$addr"
+	set_var NET_GW "$gw"
+	set_var NET_DNS "$dns"
+fi
+echo "Saved to $CONF."
+
+# The host name applies now. vpn-guard is restarted so NetBird and
+# Tailscale take the new name too (NetBird reconnects once).
+if [ "$h" != "$HOSTNAME" ]; then
+	/sbin/wyse-init hostname
+	pkill -f "wyse-init run vpn-guard"
+	echo "Host name is now $h. NetBird and Tailscale update in about 30 s."
+fi
+if [ "$m" != "$NET_MODE" ] || [ "$m" = static ]; then
+	echo "Reboot to apply the network settings."
+fi
