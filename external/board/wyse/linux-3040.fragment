@@ -1,6 +1,9 @@
 # Dell Wyse 3040 (Intel Atom x5-Z8350, Cherry Trail). Added on top of
 # linux.fragment by "make MODEL=3040".
 
+# No SATA on the 3040 (eMMC only)
+# CONFIG_ATA is not set
+
 # Cherry Trail platform
 CONFIG_X86_INTEL_LPSS=y
 CONFIG_PINCTRL_CHERRYVIEW=y

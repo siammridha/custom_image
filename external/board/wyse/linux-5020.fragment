@@ -3,3 +3,7 @@
 
 # Watchdog: AMD SP5100 TCO
 CONFIG_SP5100_TCO=y
+
+# Storage: SATA
+CONFIG_ATA=y
+CONFIG_SATA_AHCI=y

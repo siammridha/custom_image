@@ -144,10 +144,10 @@ index e2d600f0..e08c6739 100644
 +sha256  a4c0e5916bb4cf5a8a46791788534e8931a622ffac32dbff5bd8f21df7272029  tailscale-1.102.5-go2.tar.gz
 +sha256  a7ca6186a7963a0a60740f6047760eecd7a0234e8c38bd7e1e0bbcb324bda45b  LICENSE
 diff --git a/package/tailscale/tailscale.mk b/package/tailscale/tailscale.mk
-index 86039fd4..848d0c50 100644
+index 86039fd4..2f492e3e 100644
 --- a/package/tailscale/tailscale.mk
 +++ b/package/tailscale/tailscale.mk
-@@ -4,7 +4,7 @@
+@@ -4,13 +4,17 @@
  #
  ################################################################################
  
@@ -156,7 +156,22 @@ index 86039fd4..848d0c50 100644
  TAILSCALE_SITE = $(call github,tailscale,tailscale,v$(TAILSCALE_VERSION))
  TAILSCALE_LICENSE = BSD-3-Clause
  TAILSCALE_LICENSE_FILES = LICENSE
-@@ -27,9 +27,9 @@ define TAILSCALE_INSTALL_SYMLINK
+ TAILSCALE_GOMOD = tailscale.com
+ TAILSCALE_CPE_ID_VENDOR = tailscale
+-TAILSCALE_BUILD_TARGETS = cmd/tailscale cmd/tailscaled
++# Wyse: one binary. With ts_include_cli, tailscaled also has the CLI and runs
++# it when started as "tailscale" (cmd/tailscaled shouldRunCLI; the same as
++# build_dist.sh --box).
++TAILSCALE_BUILD_TARGETS = cmd/tailscaled
++TAILSCALE_TAGS = ts_include_cli
+ TAILSCALE_LDFLAGS = \
+ 	-X tailscale.com/version.longStamp=$(TAILSCALE_VERSION) \
+ 	-X tailscale.com/version.shortStamp=$(TAILSCALE_VERSION)
+@@ -24,12 +28,13 @@ endef
+ 
+ define TAILSCALE_INSTALL_SYMLINK
+ 	ln -f -s ../bin/tailscaled $(TARGET_DIR)/usr/sbin/tailscaled
++	ln -f -s tailscaled $(TARGET_DIR)/usr/bin/tailscale
  endef
  TAILSCALE_POST_INSTALL_TARGET_HOOKS += TAILSCALE_INSTALL_SYMLINK
  
@@ -168,7 +183,7 @@ index 86039fd4..848d0c50 100644
  	$(call KCONFIG_ENABLE_OPT,CONFIG_NETFILTER)
  	$(call KCONFIG_ENABLE_OPT,CONFIG_NETFILTER_NETLINK)
  	$(call KCONFIG_ENABLE_OPT,CONFIG_NFT_CT)
-@@ -38,9 +38,7 @@ define TAILSCALE_LINUX_CONFIG_FIXUPS
+@@ -38,9 +43,7 @@ define TAILSCALE_LINUX_CONFIG_FIXUPS
  	$(call KCONFIG_ENABLE_OPT,CONFIG_NF_CONNTRACK)
  	$(call KCONFIG_ENABLE_OPT,CONFIG_NF_NAT)
  	$(call KCONFIG_ENABLE_OPT,CONFIG_NF_TABLES)

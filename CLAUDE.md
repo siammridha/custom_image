@@ -22,6 +22,9 @@ Buildroot. The devices sit at remote sites, so the VPNs (NetBird first,
 Tailscale as backup) must always come back up.
 
 User's rules for the image:
+- Remove everything the device does not use, down to a single file or
+  character. Every saved byte counts as a gain, however small; whatever is
+  needed later gets installed (`alpine apk add ...`).
 - Smaller than Alpine. All software built from source; driver firmware
   binaries are OK.
 - Built in: Tailscale, NetBird, the private root CA, the SSH keys.
@@ -53,7 +56,10 @@ Partitions: p1 EFI/boot (64M at 1M), p2 read-only squashfs root (512M at
 - The overlay is in RAM: every boot starts fresh from the image.
 - `/persist` keeps the VPN identities, dropbear host keys and `wyse.conf`.
 - `/data` keeps apps and `/data/alpine` (an Alpine root: `alpine apk add ...`,
-  `alpine <cmd>` runs a command in it).
+  `alpine <cmd>` runs a command in it). It has no busybox of its own: it
+  uses the system's `/bin/busybox` (bind mount) and only the system's
+  commands; anything else needs `alpine apk add` (e.g. `curl`, `coreutils`).
+  See `external/board/wyse/alpine-root.sh`.
 - Apps run from `/data/services/<name>/run` under runsvdir (`sv` works).
 - `/etc/wyse/vpn.conf` is locked: values come from `.env` at build time.
 
@@ -65,7 +71,7 @@ Partitions: p1 EFI/boot (64M at 1M), p2 read-only squashfs root (512M at
   the Makefile adds `board/wyse/linux-<model>.fragment` to the kernel and
   passes the model to post-build.sh (written to `/etc/wyse/model`). First
   build of a model takes about an hour, later builds minutes. Buildroot
-  does not notice kernel fragment changes: run `make MODEL=... linux-rebuild`.
+  does not notice kernel fragment changes: run `make MODEL=... linux-reconfigure`.
 - Output is in `/home/vscode/wyse-build/output-<model>`, downloads in
   `/home/vscode/wyse-build/dl` (a container volume), not the workspace: the
   Mac file sharing corrupted a download once.

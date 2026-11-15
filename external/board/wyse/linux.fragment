@@ -15,14 +15,12 @@ CONFIG_NLS_ISO8859_1=y
 CONFIG_MODULES=y
 CONFIG_FW_LOADER=y
 
-# Storage: eMMC (3040), SATA/eMMC (5020), USB stick
+# Storage: eMMC, USB stick (SATA: 5020 only, in linux-5020.fragment)
 CONFIG_MMC=y
 CONFIG_MMC_BLOCK=y
 CONFIG_MMC_SDHCI=y
 CONFIG_MMC_SDHCI_PCI=y
 CONFIG_MMC_SDHCI_ACPI=y
-CONFIG_ATA=y
-CONFIG_SATA_AHCI=y
 CONFIG_USB_XHCI_HCD=y
 CONFIG_USB_EHCI_HCD=y
 CONFIG_USB_OHCI_HCD=y
@@ -98,3 +96,23 @@ CONFIG_MEDIA_CAMERA_SUPPORT=y
 CONFIG_USB_VIDEO_CLASS=m
 CONFIG_USB_SERIAL=m
 CONFIG_USB_SERIAL_CH341=m
+
+# Not used: turned on by x86_64_defconfig, which the kernel starts from.
+# NFS (and booting from it)
+# CONFIG_NFS_FS is not set
+# CONFIG_ROOT_NFS is not set
+# CONFIG_IP_PNP is not set
+# Software RAID, device mapper
+# CONFIG_MD is not set
+# CONFIG_BLK_DEV_DM is not set
+# Disk quotas
+# CONFIG_QUOTA is not set
+# CONFIG_QUOTACTL is not set
+# Wi-Fi
+# CONFIG_WIRELESS is not set
+# CONFIG_CFG80211 is not set
+# CONFIG_MAC80211 is not set
+# CONFIG_WLAN is not set
+# CONFIG_RFKILL is not set
+# Old IDE-style disk controllers
+# CONFIG_ATA_SFF is not set

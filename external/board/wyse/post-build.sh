@@ -1,7 +1,7 @@
 #!/bin/sh
 # $1 = target dir, $2 = model (3040 or 5020, from the Makefile)
 set -e
-T=$1
+T=${1:?target dir missing}
 MODEL=${2:?model missing (build with: make MODEL=3040 or MODEL=5020)}
 B=$(dirname "$0")
 
@@ -53,21 +53,8 @@ else
 	echo "alpine-minirootfs: offline, using cached $AF"
 fi
 echo "alpine-minirootfs: $AF"
-# Swap in the default package sources (latest-stable). Owners, modes and
-# device files stay as in Alpine's tarball, since it is never unpacked here.
-W=$BUILD_DIR/wyse-alpine
-rm -rf "$W" && mkdir -p "$W/etc/apk"
-printf '%s\n' \
-	https://dl-cdn.alpinelinux.org/alpine/latest-stable/main \
-	https://dl-cdn.alpinelinux.org/alpine/latest-stable/community \
-	> "$W/etc/apk/repositories"
-gunzip -c "$AD/$AF" > "$W/rootfs.tar"
-tar --delete -f "$W/rootfs.tar" ./etc/apk/repositories
-tar -rf "$W/rootfs.tar" -C "$W" --owner=0 --group=0 --numeric-owner \
-	--mode=0644 --mtime=@0 ./etc/apk/repositories
-mkdir -p "$T/usr/share/wyse"
-gzip -9n < "$W/rootfs.tar" > "$T/usr/share/wyse/alpine-minirootfs.tar.gz"
-rm -rf "$W"
+# Made into the image's archive further down (alpine-root.sh), once the
+# system's busybox links are final.
 
 # State that must survive an overlay wipe lives on the persist partition.
 # These links are part of the read-only image, so a wipe can't remove them.
@@ -95,7 +82,7 @@ find "$T/lib/modules/$KREL" -type d -empty -delete
 # Only the programs the system uses. Debug tools are installed when needed
 # into /data/alpine (alpine apk add ...) and removed after.
 # util-linux, e2fsprogs, dropbear: keep only these.
-KEEP_PROGS="sfdisk mke2fs e2fsck dropbear dropbearkey scp"
+KEEP_PROGS="sfdisk mke2fs e2fsck dropbear"
 awk -F, '$1 == "util-linux" || $1 == "e2fsprogs" || $1 == "dropbear" { print $2 }' \
 	"$BUILD_DIR/packages-file-list.txt" | grep -E '^\./(usr/)?s?bin/' | sort -u |
 while read -r f; do
@@ -120,6 +107,34 @@ while read -r l; do
 		/usr/*) ln -s ../../bin/busybox "$T$l" ;;
 	esac
 done < "$BBL"
+# sh is the shell; the extra "ash" name is not used.
+rm -f "$T/bin/ash"
+sed -i '\|^/bin/ash$|d' "$T/etc/shells"
+# Left from tools that are no longer built (crond, ifupdown).
+rm -rf "$T/etc/cron" "$T/etc/network" "$T/var/www"
+# Unused skeleton files.
+rm -rf "$T/linuxrc" "$T/opt" "$T/etc/issue" "$T/lib64" "$T/usr/lib64" \
+	"$T/var/cache" "$T/var/spool" "$T/var/lib/misc"
+# Libraries no program loads (checked with readelf: NEEDED), the .so links
+# that are only for compiling (lib/libc.so is musl itself, so it stays),
+# and e2fsprogs' build scripts.
+rm -f "$T"/lib/libstdc++.so* "$T"/usr/lib/libstdc++.so* "$T"/lib/libgcc_s.so* \
+	"$T"/lib/libatomic.so* "$T"/lib/libmount.so* "$T"/usr/lib/libmount.so* \
+	"$T"/usr/lib/libss.so*
+for f in "$T"/lib/*.so "$T"/usr/lib/*.so; do
+	[ -L "$f" ] && [ "${f##*/}" != libc.so ] && rm -f "$f"
+done
+rm -rf "$T/usr/share/et" "$T/usr/share/ss"
+# Programs read the one bundle (/etc/ssl/certs/ca-certificates.crt, which
+# also gets the private root CA below). The single files are copies.
+find "$T/etc/ssl/certs" -mindepth 1 ! -name ca-certificates.crt -exec rm -f {} +
+rm -rf "$T/usr/share/ca-certificates"
+
+# The Alpine archive, without Alpine's busybox (see alpine-root.sh). Its
+# links match the system's busybox links above.
+mkdir -p "$T/usr/share/wyse"
+"$HOST_DIR/bin/fakeroot" -- sh "$B/alpine-root.sh" "$AD/$AF" \
+	"$T/usr/share/wyse/alpine-minirootfs.tar.gz" "$T" "$BUILD_DIR/wyse-alpine"
 
 # Everything is started from /etc/inittab. Drop the packages' rc scripts
 # and udhcpc's shell lease script.
@@ -142,6 +157,7 @@ proc		/data/alpine/proc	proc	nofail	0	0
 /dev		/data/alpine/dev	none	rbind,nofail	0	0
 /tmp		/data/alpine/tmp	none	bind,nofail	0	0
 run		/data/alpine/run	tmpfs	size=32m,mode=0755,nofail	0	0
+/bin/busybox	/data/alpine/bin/busybox	none	bind,nofail	0	0
 FSTAB
 
 # No password login for root (SSH key only).
@@ -185,7 +201,6 @@ if [ -f "$ENV" ]; then
 	if [ -n "$v" ]; then
 		case $v in /*) CA=$v ;; *) CA=$(dirname "$ENV")/$v ;; esac
 		[ -f "$CA" ] || { echo "ROOT_CA: no file $CA"; exit 1; }
-		install -m 0644 "$CA" "$T/etc/ssl/certs/wyse-root-ca.pem"
 		grep -qF "$(sed -n 2p "$CA")" "$T/etc/ssl/certs/ca-certificates.crt" ||
 			cat "$CA" >> "$T/etc/ssl/certs/ca-certificates.crt"
 	fi

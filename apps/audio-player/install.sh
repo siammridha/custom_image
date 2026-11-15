@@ -26,14 +26,14 @@ S=/data/services/audio-player
 [ "$MODEL" = 3040 ] || { echo "Only the Wyse 3040 is supported (this is: ${MODEL:-unknown})." >&2; exit 1; }
 
 echo "Installing packages into $A..."
-alpine apk add --no-cache alsa-lib libgcc sof-firmware alsa-utils kmod
+alpine apk add --no-cache alsa-lib libgcc sof-firmware alsa-utils kmod curl
 
 # A pack given on the command line is always installed (a new image build
 # needs the drivers from that same build). Otherwise only when missing.
 if [ -n "$PACK" ] || ! grep -qs snd-sof-acpi-intel-byt "$A/lib/modules/$KREL/modules.dep"; then
 	echo "Installing the sound drivers for kernel $KREL..."
 	if [ -z "$PACK" ] && [ -n "$DRIVERS_URL" ]; then
-		alpine wget -qO "/tmp/$PACK_NAME" "$DRIVERS_URL/$PACK_NAME"
+		alpine curl -fsSLo "/tmp/$PACK_NAME" "$DRIVERS_URL/$PACK_NAME"
 		PACK=$A/tmp/$PACK_NAME
 	fi
 	[ -n "$PACK" ] && [ -f "$PACK" ] || { echo "Need $PACK_NAME (argument or DRIVERS_URL)." >&2; exit 1; }
@@ -44,7 +44,7 @@ fi
 
 echo "Downloading the latest release of $REPO..."
 mkdir -p "$A/usr/local/bin"
-alpine wget -qO /usr/local/bin/audio-player.new "https://github.com/$REPO/releases/latest/download/audio-player"
+alpine curl -fsSLo /usr/local/bin/audio-player.new "https://github.com/$REPO/releases/latest/download/audio-player"
 chmod 755 "$A/usr/local/bin/audio-player.new"
 mv "$A/usr/local/bin/audio-player.new" "$A/usr/local/bin/audio-player"
 mkdir -p "$A/var/lib/audio-player/audio"
