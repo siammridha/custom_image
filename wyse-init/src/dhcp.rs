@@ -2,7 +2,8 @@
 //! to wyse-init). Does what Buildroot's udhcpc default.script did:
 //!   deconfig       interface up, address 0.0.0.0, drop its DNS lines
 //!   bound / renew  set address, routes and DNS from the lease
-//! udhcpc passes the lease in environment variables.
+//! udhcpc passes the lease in environment variables. Uses `ip` (the image
+//! has no ifconfig/route), as BusyBox's examples/udhcp/simple.script does.
 use crate::sys;
 use std::env;
 use std::fs;
@@ -23,8 +24,8 @@ pub fn main(action: &str) -> i32 {
     }
     match action {
         "deconfig" => {
-            sys::run("ifconfig", &[&iface, "up"]);
-            sys::run("ifconfig", &[&iface, "0.0.0.0"]);
+            sys::run("ip", &["-4", "addr", "flush", "dev", &iface]);
+            sys::run("ip", &["link", "set", "dev", &iface, "up"]);
             write_resolv(&iface, &[]);
         }
         "bound" | "renew" => bound(&iface),
@@ -36,36 +37,43 @@ pub fn main(action: &str) -> i32 {
 fn bound(iface: &str) {
     let ip = var("ip");
     let (bcast, mask) = (var("broadcast"), var("subnet"));
-    let mut args = vec![iface, ip.as_str()];
-    if !bcast.is_empty() {
-        args.extend(["broadcast", bcast.as_str()]);
+    let addr = format!("{ip}/{}", prefix_len(&mask).unwrap_or(32));
+    // No broadcast in the lease: "+" works it out from the netmask, as
+    // ifconfig did (simple.script does the same).
+    let bcast = if bcast.is_empty() { "+".to_string() } else { bcast };
+    let args = ["addr", "replace", addr.as_str(), "broadcast", bcast.as_str(), "dev", iface];
+    sys::run("ip", &args);
+    // ifconfig replaced the old address; "ip addr replace" adds a new one
+    // next to it. Remove any other IPv4 address (a renew with a new IP).
+    for old in addresses(iface) {
+        if old != addr {
+            sys::run("ip", &["addr", "del", &old, "dev", iface]);
+        }
     }
-    if !mask.is_empty() {
-        args.extend(["netmask", mask.as_str()]);
-    }
-    sys::run("ifconfig", &args);
 
     // RFC 3442: with classless static routes, the router option is ignored.
     let statics = var("staticroutes");
     let router = var("router");
     if !statics.is_empty() {
         for (dest, gw, mask) in gateway_routes(iface) {
-            sys::run("route", &["del", "-net", &dest, "netmask", &mask, "gw", &gw, "dev", iface]);
+            let net = format!("{dest}/{}", prefix_len(&mask).unwrap_or(32));
+            sys::run("ip", &["route", "del", &net, "via", &gw, "dev", iface]);
         }
         let s: Vec<&str> = statics.split_whitespace().collect();
         for pair in s.chunks(2) {
             if let [net, gw] = pair {
-                sys::run("route", &["add", "-net", net, "gw", gw, "dev", iface]);
+                sys::run("ip", &["route", "replace", net, "via", gw, "dev", iface]);
             }
         }
     } else if !router.is_empty() {
         for _ in 0..64 {
-            if !sys::run_quiet("route", &["del", "default", "gw", "0.0.0.0", "dev", iface]) {
+            if !sys::run_quiet("ip", &["route", "del", "default", "dev", iface]) {
                 break;
             }
         }
-        for r in router.split_whitespace() {
-            sys::run("route", &["add", "default", "gw", r, "dev", iface]);
+        for (n, r) in router.split_whitespace().enumerate() {
+            let metric = n.to_string();
+            sys::run("ip", &["route", "add", "default", "via", r, "dev", iface, "metric", &metric]);
         }
     }
 
@@ -101,6 +109,32 @@ fn resolv_update(old: &str, iface: &str, add: &[String]) -> String {
     out
 }
 
+/// 255.255.255.0 -> 24. None if it is not a valid netmask.
+fn prefix_len(mask: &str) -> Option<u32> {
+    let m = u32::from(mask.parse::<Ipv4Addr>().ok()?);
+    (m.leading_ones() == m.count_ones()).then(|| m.count_ones())
+}
+
+/// The IPv4 addresses on `iface`, as "a.b.c.d/nn".
+fn addresses(iface: &str) -> Vec<String> {
+    let out = std::process::Command::new("ip")
+        .args(["-4", "-o", "addr", "show", "dev", iface])
+        .output()
+        .map(|o| String::from_utf8_lossy(&o.stdout).into_owned())
+        .unwrap_or_default();
+    parse_addresses(&out)
+}
+
+fn parse_addresses(out: &str) -> Vec<String> {
+    out.lines()
+        .filter_map(|l| {
+            let f: Vec<&str> = l.split_whitespace().collect();
+            let i = f.iter().position(|w| *w == "inet")?;
+            f.get(i + 1).map(|a| a.to_string())
+        })
+        .collect()
+}
+
 /// Routes on `iface` that go through a gateway: (dest, gateway, mask).
 fn gateway_routes(iface: &str) -> Vec<(String, String, String)> {
     parse_routes(&fs::read_to_string("/proc/net/route").unwrap_or_default(), iface)
@@ -132,6 +166,22 @@ mod tests {
         let new = resolv_update(old, "eth0", &["nameserver 192.168.80.1 # eth0".into()]);
         assert_eq!(new, "nameserver 9.9.9.9 # eth1\nnameserver 192.168.80.1 # eth0\n");
         assert_eq!(resolv_update(old, "eth1", &[]), "nameserver 1.1.1.1 # eth0\nsearch lan # eth0\n");
+    }
+
+    #[test]
+    fn netmask() {
+        assert_eq!(prefix_len("255.255.255.0"), Some(24));
+        assert_eq!(prefix_len("255.255.255.255"), Some(32));
+        assert_eq!(prefix_len("0.0.0.0"), Some(0));
+        assert_eq!(prefix_len("255.0.255.0"), None);
+        assert_eq!(prefix_len(""), None);
+    }
+
+    #[test]
+    fn ip_addr_output() {
+        let out = "2: eth0    inet 192.168.80.13/24 brd 192.168.80.255 scope global eth0\\       valid_lft forever preferred_lft forever\n\
+                   2: eth0    inet 10.0.0.5/8 scope global secondary eth0\n";
+        assert_eq!(parse_addresses(out), ["192.168.80.13/24", "10.0.0.5/8"]);
     }
 
     #[test]

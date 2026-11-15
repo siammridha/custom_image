@@ -92,6 +92,35 @@ done
 find "$T/lib/modules/$KREL" -type d -empty -delete
 "$HOST_DIR/sbin/depmod" -b "$T" "$KREL"
 
+# Only the programs the system uses. Debug tools are installed when needed
+# into /data/alpine (alpine apk add ...) and removed after.
+# util-linux, e2fsprogs, dropbear: keep only these.
+KEEP_PROGS="sfdisk mke2fs e2fsck dropbear dropbearkey scp"
+awk -F, '$1 == "util-linux" || $1 == "e2fsprogs" || $1 == "dropbear" { print $2 }' \
+	"$BUILD_DIR/packages-file-list.txt" | grep -E '^\./(usr/)?s?bin/' | sort -u |
+while read -r f; do
+	echo " $KEEP_PROGS " | grep -qF " ${f##*/} " || rm -f "$T/$f"
+done
+# BusyBox: its config (busybox.config) has only the needed commands. The
+# target folder is reused between builds, so remove links to commands that
+# are no longer built, and add the ones another package's program (deleted
+# above) was in the way of.
+BBL=$(ls "$BUILD_DIR"/busybox-*/busybox.links)
+for d in bin sbin usr/bin usr/sbin; do
+	for f in "$T/$d"/*; do
+		[ -L "$f" ] && [ "$(basename "$(readlink "$f")")" = busybox ] || continue
+		grep -qxF "/$d/${f##*/}" "$BBL" || rm -f "$f"
+	done
+done
+while read -r l; do
+	[ -e "$T$l" ] || [ -L "$T$l" ] && continue
+	case $l in
+		/bin/*) ln -s busybox "$T$l" ;;
+		/sbin/*) ln -s ../bin/busybox "$T$l" ;;
+		/usr/*) ln -s ../../bin/busybox "$T$l" ;;
+	esac
+done < "$BBL"
+
 # Everything is started from /etc/inittab. Drop the packages' rc scripts
 # and udhcpc's shell lease script.
 rm -rf "$T/etc/init.d" "$T/usr/share/udhcpc"

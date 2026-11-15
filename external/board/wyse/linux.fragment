@@ -45,23 +45,19 @@ CONFIG_NET_VENDOR_REALTEK=y
 CONFIG_R8169=y
 CONFIG_USB_NET_DRIVERS=y
 CONFIG_USB_RTL8152=y
-CONFIG_IPV6=y
+# CONFIG_IPV6 is not set
 CONFIG_TUN=y
 CONFIG_WIREGUARD=y
 
 # nftables for NetBird (firewall, routing peer / exit node NAT)
 # and Tailscale. No iptables binary, so both use nftables.
 CONFIG_NF_TABLES=y
-CONFIG_NF_TABLES_INET=y
 CONFIG_NF_TABLES_IPV4=y
-CONFIG_NF_TABLES_IPV6=y
 CONFIG_NFT_CT=y
 CONFIG_NFT_NAT=y
 CONFIG_NFT_MASQ=y
 CONFIG_NF_TABLES_NETDEV=y
-CONFIG_NFT_FIB_INET=y
 CONFIG_NFT_FIB_IPV4=y
-CONFIG_NFT_FIB_IPV6=y
 CONFIG_NFT_LIMIT=y
 CONFIG_NFT_LOG=y
 CONFIG_NFT_NUMGEN=y
@@ -70,9 +66,7 @@ CONFIG_NFT_QUOTA=y
 CONFIG_NFT_REDIR=y
 CONFIG_NFT_SOCKET=y
 CONFIG_NFT_REJECT=y
-CONFIG_NFT_REJECT_INET=y
 CONFIG_NFT_REJECT_IPV4=y
-CONFIG_NFT_REJECT_IPV6=y
 
 # Watchdog: the hardware reboots the device if the system freezes. The
 # model's own watchdog driver is in linux-<model>.fragment; i6300esb = QEMU.
