@@ -30,14 +30,14 @@ S=/data/services/simple-kvm
 [ "$MODEL" = 3040 ] || { echo "Only the Wyse 3040 is supported (this is: ${MODEL:-unknown})." >&2; exit 1; }
 
 echo "Installing packages into $A..."
-alpine apk add --no-cache libva libva-intel-driver libva-utils libgcc kmod curl
+alpine apk add --no-cache libva libva-intel-driver libva-utils libgcc kmod
 
 # A pack given on the command line is always installed (a new image build
 # needs the drivers from that same build). Otherwise only when missing.
 if [ -n "$PACK" ] || ! grep -qs '/i915.ko' "$A/lib/modules/$KREL/modules.dep"; then
 	echo "Installing the GPU, capture and serial drivers for kernel $KREL..."
 	if [ -z "$PACK" ] && [ -n "$DRIVERS_URL" ]; then
-		alpine curl -fsSLo "/tmp/$PACK_NAME" "$DRIVERS_URL/$PACK_NAME"
+		alpine wget -qO "/tmp/$PACK_NAME" "$DRIVERS_URL/$PACK_NAME"
 		PACK=$A/tmp/$PACK_NAME
 	fi
 	[ -n "$PACK" ] && [ -f "$PACK" ] || { echo "Need $PACK_NAME (argument or DRIVERS_URL)." >&2; exit 1; }
@@ -64,7 +64,7 @@ ls /dev/ttyUSB* >/dev/null 2>&1 || echo "Note: no CH9329 serial adapter plugged 
 
 echo "Downloading the latest release of $REPO..."
 mkdir -p "$A/usr/local/bin"
-alpine curl -fsSLo /usr/local/bin/simple_kvm.new "https://github.com/$REPO/releases/latest/download/simple_kvm"
+alpine wget -qO /usr/local/bin/simple_kvm.new "https://github.com/$REPO/releases/latest/download/simple_kvm"
 chmod 755 "$A/usr/local/bin/simple_kvm.new"
 mv "$A/usr/local/bin/simple_kvm.new" "$A/usr/local/bin/simple_kvm"
 

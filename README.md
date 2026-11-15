@@ -30,9 +30,25 @@ private.
 - Running device: `scripts/deploy.sh <model> [ip]`. Keeps `/persist` and
   `/data`. Refuses if the device runs the other model's image.
 
+## Alpine subsystem
+
+The device has a second, small system: Alpine Linux in `/data/alpine`. It
+keeps the main system small and unchanged.
+
+- `alpine apk add <package>` installs Alpine packages into it (kept on
+  `/data`).
+- `alpine` opens a shell inside it; `alpine <cmd>` runs one command in it.
+  `exit` goes back to the main system.
+- All apps run inside it (with `chroot`). The main system starts and
+  watches them: runsvdir runs `/data/services/<name>/run` (`sv status`,
+  `sv restart <name>`).
+- It has its own busybox (Alpine's). The main system's busybox has only the
+  commands the main system uses.
+- SSH, NetBird and Tailscale stay in the main system.
+
 ## Apps and drivers
 
-Apps are installed after boot into `/data`:
+Apps are installed after boot into `/data` and run in the Alpine subsystem:
 
 - `apps/audio-player/install.sh` - audio player on port 3000 (needs the
   `sound` driver pack).

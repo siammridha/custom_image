@@ -54,7 +54,7 @@ else
 fi
 echo "alpine-minirootfs: $AF"
 # Made into the image's archive further down (alpine-root.sh), once the
-# system's busybox links are final.
+# private root CA is known.
 
 # State that must survive an overlay wipe lives on the persist partition.
 # These links are part of the read-only image, so a wipe can't remove them.
@@ -130,12 +130,6 @@ rm -rf "$T/usr/share/et" "$T/usr/share/ss"
 find "$T/etc/ssl/certs" -mindepth 1 ! -name ca-certificates.crt -exec rm -f {} +
 rm -rf "$T/usr/share/ca-certificates"
 
-# The Alpine archive, without Alpine's busybox (see alpine-root.sh). Its
-# links match the system's busybox links above.
-mkdir -p "$T/usr/share/wyse"
-"$HOST_DIR/bin/fakeroot" -- sh "$B/alpine-root.sh" "$AD/$AF" \
-	"$T/usr/share/wyse/alpine-minirootfs.tar.gz" "$T" "$BUILD_DIR/wyse-alpine"
-
 # Everything is started from /etc/inittab. Drop the packages' rc scripts
 # and udhcpc's shell lease script.
 rm -rf "$T/etc/init.d" "$T/usr/share/udhcpc"
@@ -157,7 +151,6 @@ proc		/data/alpine/proc	proc	nofail	0	0
 /dev		/data/alpine/dev	none	rbind,nofail	0	0
 /tmp		/data/alpine/tmp	none	bind,nofail	0	0
 run		/data/alpine/run	tmpfs	size=32m,mode=0755,nofail	0	0
-/bin/busybox	/data/alpine/bin/busybox	none	bind,nofail	0	0
 FSTAB
 
 # No password login for root (SSH key only).
@@ -174,6 +167,7 @@ rm -f "$T/etc/wyse/authorized_keys" "$T/etc/wyse/hosts"
 
 # Settings from the repo's .env (or the file in $WYSE_ENV).
 ENV=${WYSE_ENV:-$B/../../../.env}
+CA=
 if [ -f "$ENV" ]; then
 	get() { sed -n "s/^$1=//p" "$ENV" | head -n 1 | tr -d '\r'; }
 	setconf() { sed -i "s|^$1=.*|$1=\"$2\"|" "$T/etc/wyse/vpn.conf"; }
@@ -206,4 +200,9 @@ if [ -f "$ENV" ]; then
 	fi
 fi
 chmod 0600 "$K"
+
+# The Alpine archive, trimmed and with the private root CA (see alpine-root.sh).
+mkdir -p "$T/usr/share/wyse"
+"$HOST_DIR/bin/fakeroot" -- sh "$B/alpine-root.sh" "$AD/$AF" \
+	"$T/usr/share/wyse/alpine-minirootfs.tar.gz" "$BUILD_DIR/wyse-alpine" "$CA"
 

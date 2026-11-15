@@ -56,10 +56,10 @@ Partitions: p1 EFI/boot (64M at 1M), p2 read-only squashfs root (512M at
 - The overlay is in RAM: every boot starts fresh from the image.
 - `/persist` keeps the VPN identities, dropbear host keys and `wyse.conf`.
 - `/data` keeps apps and `/data/alpine` (an Alpine root: `alpine apk add ...`,
-  `alpine <cmd>` runs a command in it). It has no busybox of its own: it
-  uses the system's `/bin/busybox` (bind mount) and only the system's
-  commands; anything else needs `alpine apk add` (e.g. `curl`, `coreutils`).
-  See `external/board/wyse/alpine-root.sh`.
+  `alpine <cmd>` runs a command in it). It is a separate subsystem with its
+  own busybox (Alpine's); the system's `/bin/busybox` has only the commands
+  the main system uses. The image's Alpine archive is trimmed and has the
+  private root CA: see `external/board/wyse/alpine-root.sh`.
 - Apps run from `/data/services/<name>/run` under runsvdir (`sv` works).
 - `/etc/wyse/vpn.conf` is locked: values come from `.env` at build time.
 

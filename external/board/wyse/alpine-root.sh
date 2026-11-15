@@ -2,52 +2,51 @@
 # Make the Alpine starter archive that goes into the image. Run by
 # post-build.sh under Buildroot's fakeroot, so owners and modes stay as in
 # Alpine's archive.
-#   alpine-root.sh <alpine-minirootfs.tar.gz> <out.tar.gz> <target dir> <work dir>
+#   alpine-root.sh <alpine-minirootfs.tar.gz> <out.tar.gz> <work dir> [root CA]
 #
-# Alpine's own busybox is removed. Inside /data/alpine, the system's
-# /bin/busybox is used (bind-mounted from /etc/fstab), with links for the
-# same commands the system has. The host's apk does the removal, so Alpine's
-# package database stays correct:
-#   - wyse-binsh: a tiny package that provides /bin/sh (in place of
-#     busybox-binsh, which alpine-baselayout needs)
-#     It also has Alpine's busybox trigger (aports main/busybox/busybox.trigger):
-#     when a package changes /bin, /usr/bin, /sbin or /usr/sbin, missing links
-#     are made again ("busybox --install -s" does not replace existing files).
-#   - "!busybox" in world: later "apk add" runs can't bring it back
-# The links are not owned by a package, like Alpine's own busybox links, so
-# a real package (e.g. coreutils) can still replace them, and its removal
-# brings them back.
+# Alpine keeps its own busybox. Removed: packages and files apk and the apps
+# don't use. The host's apk removes the packages, so Alpine's package
+# database stays correct.
 set -eu
-IN=$1 OUT=$2 T=$3 W=$4
+IN=$1 OUT=$2 W=$3 CA=${4:-}
 
 rm -rf "$W"
-mkdir -p "$W/root" "$W/pkg/bin"
-printf '#!/bin/sh\n/bin/busybox --install -s\n' > "$W/trigger"
+mkdir -p "$W/root"
 gunzip -c "$IN" | tar -xpf - -C "$W/root"
 R=$W/root
 
-# Alpine's busybox links (made by its install trigger, not in the database).
-find "$R" -lname /bin/busybox -delete
-
-ln -s /bin/busybox "$W/pkg/bin/sh"
-apk mkpkg -I name:wyse-binsh -I version:1-r0 -I arch:noarch \
-	-I "description:/bin/sh from the system busybox" \
-	-I "provides:/bin/sh cmd:sh=1-r0" -I license:GPL-2.0-only \
-	-s "trigger:$W/trigger" -t /bin -t /usr/bin -t /sbin -t /usr/sbin \
-	-F "$W/pkg" -o "$W/wyse-binsh.apk"
+# Packages apk does not need (a package that needs one pulls it back in):
+#   musl-utils, scanelf: getconf getent iconv ldd ldconfig scanelf
+#   alpine-release: /etc/alpine-release, /etc/os-release, /etc/issue
 apk --root "$R" --arch x86_64 --repositories-file /dev/null --no-network \
-	--no-scripts --no-cache --logfile=no --allow-untrusted --quiet \
-	add "$W/wyse-binsh.apk" '!busybox'
+	--no-scripts --no-cache --logfile=no --quiet \
+	del musl-utils alpine-release
 
-# Mount target for the system's busybox, and links for its commands.
-: > "$R/bin/busybox"
-chmod 755 "$R/bin/busybox"
-for d in bin sbin usr/bin usr/sbin; do
-	for l in "$T/$d"/*; do
-		[ -L "$l" ] && [ "$(basename "$(readlink "$l")")" = busybox ] || continue
-		[ -e "$R/$d/${l##*/}" ] || [ -L "$R/$d/${l##*/}" ] || ln -s /bin/busybox "$R/$d/${l##*/}"
-	done
-done
+# Files apk and the apps don't use, from packages that stay. apk reads keys
+# only from /etc/apk/keys (libapk: etc/apk/keys, lib/apk/keys); OpenSSL runs
+# without a config file; musl has /etc/protocols built in and does not read
+# nsswitch.conf; the rest is for a booted Alpine (init, cron, modules,
+# sysctl, login, network setup, DHCP, log rotation), not a chroot.
+cd "$R"
+rm -rf usr/share/apk usr/lib/engines-3 usr/lib/ossl-modules usr/lib/sysctl.d \
+	etc/ssl1.1 etc/ssl/openssl.cnf etc/ssl/openssl.cnf.dist \
+	etc/ssl/ct_log_list.cnf etc/ssl/ct_log_list.cnf.dist \
+	etc/crontabs var/spool/cron etc/inittab etc/modprobe.d etc/modules \
+	etc/motd etc/fstab etc/hostname etc/sysctl.conf etc/secfixes.d etc/nsswitch.conf \
+	etc/protocols etc/profile.d/README etc/profile.d/color_prompt.sh.disabled \
+	etc/securetty etc/udhcpc usr/share/udhcpc etc/network etc/logrotate.d
+cd - > /dev/null
+
+# The private root CA, trusted inside Alpine too: added to Alpine's bundle
+# (what programs read), and put where Alpine's update-ca-certificates
+# (package ca-certificates) takes local CAs from, so it stays if that
+# package is installed later.
+if [ -n "$CA" ]; then
+	mkdir -p "$R/usr/local/share/ca-certificates"
+	cp "$CA" "$R/usr/local/share/ca-certificates/wyse-root-ca.crt"
+	chmod 644 "$R/usr/local/share/ca-certificates/wyse-root-ca.crt"
+	cat "$CA" >> "$R/etc/ssl/certs/ca-certificates.crt"
+fi
 
 # Default package sources (latest-stable).
 printf '%s\n' \
