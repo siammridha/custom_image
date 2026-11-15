@@ -1,10 +1,3 @@
 {
-  "statusLine": {
-    "type": "command",
-    "command": "bash .devcontainer/statusline-command.sh"
-  },
-  "enabledPlugins": {
-    "ponytail@ponytail": false
-  },
   "remoteControlAtStartup": false
 }
