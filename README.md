@@ -32,6 +32,13 @@ private.
 
 ## Apps and drivers
 
-Apps are installed after boot into `/data`, for example
-`apps/audio-player/install.sh`. Drivers that only some apps need are shipped
+Apps are installed after boot into `/data`:
+
+- `apps/audio-player/install.sh` - audio player on port 3000 (needs the
+  `sound` driver pack).
+- `apps/simple-kvm/install.sh` - KVM over the web on port 3001 (needs the
+  `kvm` driver pack).
+
+Copy the script and the driver pack to the device and run
+`sh install.sh wyse-drivers-3040-<pack>-<kernel>.tar.gz`. Drivers that only some apps need are shipped
 as driver packs: see `drivers/README`.

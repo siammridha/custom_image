@@ -21,6 +21,7 @@ Packs (only the 3040 has packs so far)
   Firmware comes from Alpine (apk add sof-firmware).
 - kvm:   i915 (Intel GPU), uvcvideo (USB capture/webcam), ch341 (USB serial).
   User-space parts come from Alpine (apk add libva libva-intel-driver).
+  Used by apps/simple-kvm/install.sh.
 
 A pack only loads into the exact kernel it was built with. After any kernel
 change, rebuild the packs and reinstall them on the devices.
@@ -31,4 +32,4 @@ On the device (what an install script does)
   printf %s /data/alpine/lib/firmware > /sys/module/firmware_class/parameters/path
   chroot /data/alpine modprobe -a <modules>
 Modules are not loaded by themselves at boot: the app's run file loads them.
-See apps/audio-player/install.sh.
+See apps/audio-player/install.sh and apps/simple-kvm/install.sh.
