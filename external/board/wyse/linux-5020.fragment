@@ -1,0 +1,5 @@
+# Dell Wyse 5020 (AMD GX-415GA). Added on top of linux.fragment by
+# "make MODEL=5020". Not tested on a device yet.
+
+# Watchdog: AMD SP5100 TCO
+CONFIG_SP5100_TCO=y

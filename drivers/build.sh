@@ -2,26 +2,27 @@
 # Make a driver pack: the kernel modules for one kind of hardware, taken
 # from the image build, so an app's install script can put them in /data.
 #
-#   drivers/build.sh sound      modules listed in drivers/sound.modules
+#   drivers/build.sh 3040 sound   modules listed in drivers/3040/sound.modules
 #
-# Run after building the image ("make" in wyse/). Output:
-#   drivers/out/wyse-drivers-<pack>-<kernel>.tar.gz
+# Run after building that model's image ("make MODEL=3040"). Output:
+#   drivers/out/wyse-drivers-<model>-<pack>-<kernel>.tar.gz
 # It holds lib/modules/<kernel>/... for the listed modules and every module
 # they need. Unpack it into /data/alpine and load the modules with Alpine's
 # modprobe (apk add kmod).
 #
-# The pack's kernel settings are in board/wyse/linux.fragment. A pack only
+# The pack's kernel settings are in board/wyse/linux*.fragment. A pack only
 # loads into the kernel it was made with: make the packs again after every
 # kernel change.
 set -eu
 
-PACK=${1:?usage: drivers/build.sh <pack>}
+MODEL=${1:?usage: drivers/build.sh <model> <pack>}
+PACK=${2:?usage: drivers/build.sh <model> <pack>}
 HERE=$(cd "$(dirname "$0")" && pwd)
-LIST=$HERE/$PACK.modules
-OUT=${WYSE_OUT:-/home/vscode/wyse-build/output}
+LIST=$HERE/$MODEL/$PACK.modules
+OUT=${WYSE_OUT:-/home/vscode/wyse-build/output-$MODEL}
 POOL=$OUT/build/wyse-driver-pool
-[ -f "$LIST" ] || { echo "no $LIST" >&2; exit 1; }
-[ -d "$POOL/lib/modules" ] || { echo "build the image first (no $POOL)" >&2; exit 1; }
+[ -f "$LIST" ] || { echo "no pack \"$PACK\" for the $MODEL (no $LIST)" >&2; exit 1; }
+[ -d "$POOL/lib/modules" ] || { echo "build the image first: make MODEL=$MODEL (no $POOL)" >&2; exit 1; }
 KREL=$(ls "$POOL/lib/modules")
 M=$POOL/lib/modules/$KREL
 DEP=$M/modules.dep
@@ -42,7 +43,7 @@ while [ -n "$todo" ]; do
 	next=
 	for m in $todo; do
 		p=$(path_of "$m")
-		[ -n "$p" ] || { echo "$m: not built (check board/wyse/linux.fragment)" >&2; exit 1; }
+		[ -n "$p" ] || { echo "$m: not built (check board/wyse/linux*.fragment)" >&2; exit 1; }
 		grep -qxF "$p" "$W/files" && continue
 		echo "$p" >> "$W/files"
 		for d in $(grep "^$p:" "$DEP" | cut -d: -f2-); do
@@ -66,7 +67,7 @@ cp "$M/modules.builtin" "$M/modules.builtin.modinfo" "$M/modules.order" "$R/" 2>
 "$OUT/host/sbin/depmod" -b "$W/root" "$KREL"
 
 mkdir -p "$HERE/out"
-T=$HERE/out/wyse-drivers-$PACK-$KREL.tar.gz
+T=$HERE/out/wyse-drivers-$MODEL-$PACK-$KREL.tar.gz
 tar -czf "$T" -C "$W/root" --owner=0 --group=0 lib
 echo "$T ($(du -h "$T" | cut -f1), $(wc -l < "$W/files") modules):"
 sed 's|.*/||; s|\.ko.*||' "$W/files" | sort | tr '\n' ' '

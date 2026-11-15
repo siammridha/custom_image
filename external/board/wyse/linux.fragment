@@ -29,23 +29,7 @@ CONFIG_USB_OHCI_HCD=y
 CONFIG_USB_STORAGE=y
 CONFIG_USB_UAS=y
 
-# Cherry Trail platform (3040)
-CONFIG_X86_INTEL_LPSS=y
-CONFIG_PINCTRL_CHERRYVIEW=y
-CONFIG_MFD_INTEL_LPSS_ACPI=y
-CONFIG_MFD_INTEL_LPSS_PCI=y
-CONFIG_DW_DMAC=y
-CONFIG_I2C_DESIGNWARE_CORE=y
-CONFIG_I2C_DESIGNWARE_PLATFORM=y
-CONFIG_I2C_DESIGNWARE_BAYTRAIL=y
-CONFIG_INTEL_SOC_PMIC=y
-CONFIG_INTEL_SOC_PMIC_CHTWC=y
-CONFIG_MFD_AXP20X_I2C=y
-CONFIG_PMIC_OPREGION=y
-CONFIG_CHT_WC_PMIC_OPREGION=y
-CONFIG_XPOWER_PMIC_OPREGION=y
-
-# No GPU drivers in the image (i915 is in the "kvm" driver pack). Screen
+# No GPU drivers in the image (3040: i915 is in the "kvm" driver pack). Screen
 # console uses the firmware framebuffer (VGA text in BIOS mode, simpledrm
 # in UEFI mode).
 CONFIG_DRM=y
@@ -90,15 +74,11 @@ CONFIG_NFT_REJECT_INET=y
 CONFIG_NFT_REJECT_IPV4=y
 CONFIG_NFT_REJECT_IPV6=y
 
-# Watchdog: the hardware reboots the device if the system freezes.
-# 3040 = Intel iTCO (via LPC), 5020 = AMD SP5100 TCO, i6300esb = QEMU.
+# Watchdog: the hardware reboots the device if the system freezes. The
+# model's own watchdog driver is in linux-<model>.fragment; i6300esb = QEMU.
 # softdog is a module, loaded only when no hardware watchdog was found.
 CONFIG_WATCHDOG=y
 CONFIG_WATCHDOG_CORE=y
-CONFIG_LPC_ICH=y
-CONFIG_ITCO_WDT=y
-CONFIG_ITCO_VENDOR_SUPPORT=y
-CONFIG_SP5100_TCO=y
 CONFIG_I6300ESB_WDT=y
 CONFIG_SOFT_WATCHDOG=m
 
@@ -109,26 +89,14 @@ CONFIG_MEMCG=y
 # with the kernel, then removed from the image by post-build.sh and
 # shipped as packs that apps install into /data. Building them here keeps
 # the small shared parts they need inside the kernel, so the packs always
-# load into this exact kernel.
+# load into this exact kernel. Model-only pack drivers (built-in sound,
+# GPU) are in linux-<model>.fragment.
 
-# Pack "sound": built-in sound (Cherry Trail + RT5672 codec, SOF driver)
-# and USB sound cards.
-CONFIG_SND_SOC=m
-CONFIG_SND_SOC_SOF_TOPLEVEL=y
-CONFIG_SND_SOC_SOF_ACPI=m
-CONFIG_SND_SOC_SOF_INTEL_TOPLEVEL=y
-CONFIG_SND_SOC_SOF_BAYTRAIL=m
-CONFIG_SND_SOC_INTEL_SST_TOPLEVEL=y
-CONFIG_SND_SOC_INTEL_MACH=y
-CONFIG_SND_SOC_INTEL_CHT_BSW_RT5672_MACH=m
-# CONFIG_SND_SST_ATOM_HIFI2_PLATFORM_ACPI is not set
-# CONFIG_SND_SST_ATOM_HIFI2_PLATFORM is not set
+# USB sound cards (pack "sound").
 CONFIG_SND_USB_AUDIO=m
 
-# Pack "kvm": GPU (Intel i915, for the VA-API H.264 encoder), USB capture
-# cards (uvcvideo) and the CH9329 keyboard/mouse adapter (CH340 serial).
-CONFIG_DRM_I915=m
-# CONFIG_DRM_I915_CAPTURE_ERROR is not set
+# USB capture cards (uvcvideo) and the CH9329 keyboard/mouse adapter (CH340
+# serial) (pack "kvm").
 CONFIG_MEDIA_SUPPORT=m
 CONFIG_MEDIA_SUPPORT_FILTER=y
 CONFIG_MEDIA_USB_SUPPORT=y

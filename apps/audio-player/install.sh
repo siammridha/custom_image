@@ -8,24 +8,29 @@
 # removes it. Same steps as the app's own deploy/install.sh, adapted:
 #   - packages go into the Alpine folder (/data/alpine)
 #   - the sound drivers are a driver pack made for this image's kernel
-#     (drivers/build.sh sound), not part of the image
+#     (drivers/build.sh 3040 sound), not part of the image
 #   - the service is /data/services/audio-player/run instead of OpenRC
 set -eu
 
 REPO=siammridha/audio_player
 KREL=$(uname -r)
-PACK_NAME=wyse-drivers-sound-$KREL.tar.gz
+MODEL=$(cat /etc/wyse/model 2>/dev/null || true)
+PACK_NAME=wyse-drivers-$MODEL-sound-$KREL.tar.gz
 PACK=${1:-}
 DRIVERS_URL=${DRIVERS_URL:-}   # optional: folder URL holding $PACK_NAME
 A=/data/alpine
 S=/data/services/audio-player
 
 [ "$(id -u)" = 0 ] || { echo "Run this as root." >&2; exit 1; }
+# The built-in sound setup below (SOF driver, rt5672 card) is the 3040's.
+[ "$MODEL" = 3040 ] || { echo "Only the Wyse 3040 is supported (this is: ${MODEL:-unknown})." >&2; exit 1; }
 
 echo "Installing packages into $A..."
 alpine apk add --no-cache alsa-lib libgcc sof-firmware alsa-utils kmod
 
-if ! [ -f "$A/lib/modules/$KREL/modules.dep" ] || ! grep -q snd-sof-acpi-intel-byt "$A/lib/modules/$KREL/modules.dep"; then
+# A pack given on the command line is always installed (a new image build
+# needs the drivers from that same build). Otherwise only when missing.
+if [ -n "$PACK" ] || ! grep -qs snd-sof-acpi-intel-byt "$A/lib/modules/$KREL/modules.dep"; then
 	echo "Installing the sound drivers for kernel $KREL..."
 	if [ -z "$PACK" ] && [ -n "$DRIVERS_URL" ]; then
 		alpine wget -qO "/tmp/$PACK_NAME" "$DRIVERS_URL/$PACK_NAME"

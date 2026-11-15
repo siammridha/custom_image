@@ -36,13 +36,15 @@ User's rules for the image:
   Buildroot, edit in `buildroot/` and save the diff back to the patch
   (`git -C buildroot diff > patches/buildroot-wyse.patch`).
 - `external/` Buildroot external tree: `configs/wyse_defconfig`,
-  `board/wyse/` (kernel fragment, genimage, grub, post-build, rootfs
+  `board/wyse/` (kernel fragments, genimage, grub, post-build, rootfs
   overlay), `package/netbird`.
 - `wyse-init/` Rust program (x86_64 musl) that does preinit, boot, services,
   vpn-guard, apps setup and DHCP lease handling. No boot shell scripts.
 - `drivers/` driver packs (see `drivers/README`).
 - `apps/<name>/install.sh` installs an app on a running device.
-- `scripts/deploy.sh` puts a built image on a running device over SSH.
+- `build.sh` asks for the model and builds the image and its driver packs.
+- `scripts/deploy.sh <model> [ip]` puts a built image on a running device
+  over SSH.
 
 # Disk and boot
 
@@ -59,14 +61,23 @@ Partitions: p1 EFI/boot (64M at 1M), p2 read-only squashfs root (512M at
 
 - `cp .env.example .env`, fill it in; make an SSH key (`keys/README`); put
   the private root CA in `root_ca.crt` (`ROOT_CA` in `.env` points to it).
-- `make` (first build takes about an hour). Output and downloads are in
-  `/home/vscode/wyse-build` (a container volume), not the workspace: the Mac
-  file sharing corrupted a download once.
+- `./build.sh` or `make MODEL=3040` / `MODEL=5020`. One image per model:
+  the Makefile adds `board/wyse/linux-<model>.fragment` to the kernel and
+  passes the model to post-build.sh (written to `/etc/wyse/model`). First
+  build of a model takes about an hour, later builds minutes. Buildroot
+  does not notice kernel fragment changes: run `make MODEL=... linux-rebuild`.
+- Output is in `/home/vscode/wyse-build/output-<model>`, downloads in
+  `/home/vscode/wyse-build/dl` (a container volume), not the workspace: the
+  Mac file sharing corrupted a download once.
+- Go modules for Tailscale and NetBird come from the Go module proxy
+  (`external/external.mk`); Buildroot's default clones each module's git
+  repo and got stuck on aws-sdk-go-v2. Tailscale is built with
+  `ts_omit_aws` (no AWS state store).
 - The build host is Alpine on arm64. Go is built from source and needs the
   host `go` to start. Host packages are in `.devcontainer/Dockerfile`; if the
   build fails on a missing host tool, add it there.
 - Kernel modules: only 8 stay in the image; the rest go to driver packs
-  (`drivers/build.sh <pack>`). Packs only load into the exact kernel they
+  (`drivers/build.sh <model> <pack>`, lists in `drivers/<model>/`). Packs only load into the exact kernel they
   were built with, so rebuild them after any kernel change.
 
 # Test device
@@ -74,7 +85,7 @@ Partitions: p1 EFI/boot (64M at 1M), p2 read-only squashfs root (512M at
 - Wyse 3040 at `DEVICE_IP` in `.env`. SSH:
   `ssh -i keys/wyse_ed25519 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null root@<ip>`.
   No scp on the device; copy with `ssh ... 'cat > file' < file`.
-- Deploy: `scripts/deploy.sh` (keeps `/persist` and `/data`).
+- Deploy: `scripts/deploy.sh 3040` (keeps `/persist` and `/data`).
 - The image's busybox has no `tar -z`: use `gunzip -c f.tar.gz | tar -x`.
 - Built-in sound: SOF driver, card `rt5672`, firmware from Alpine's
   `sof-firmware`. Inside `/data/alpine`, `alsactl` needs `/run/lock`.

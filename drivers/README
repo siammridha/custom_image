@@ -6,15 +6,17 @@ webcam, USB serial). Each app's install script installs the drivers it
 needs, as a "driver pack", into /data/alpine.
 
 How it works
-- board/wyse/linux.fragment turns the pack drivers on as modules (=m).
+- board/wyse/linux.fragment (both models) and linux-<model>.fragment turn
+  the pack drivers on as modules (=m).
   That way the image kernel holds the small shared parts they need.
 - post-build.sh keeps only 8 modules in the image (IMAGE_MODULES) and
   sets the rest aside in $BUILD_DIR/wyse-driver-pool.
-- drivers/build.sh <pack> takes the modules listed in drivers/<pack>.modules
-  plus every module they need, and writes
-  drivers/out/wyse-drivers-<pack>-<kernel>.tar.gz.
+- drivers/build.sh <model> <pack> takes the modules listed in
+  drivers/<model>/<pack>.modules plus every module they need, and writes
+  drivers/out/wyse-drivers-<model>-<pack>-<kernel>.tar.gz.
+  ./build.sh builds all packs of the model after the image.
 
-Packs
+Packs (only the 3040 has packs so far)
 - sound: Wyse 3040 built-in sound (SOF, rt5672 card) and USB sound cards.
   Firmware comes from Alpine (apk add sof-firmware).
 - kvm:   i915 (Intel GPU), uvcvideo (USB capture/webcam), ch341 (USB serial).
@@ -24,7 +26,7 @@ A pack only loads into the exact kernel it was built with. After any kernel
 change, rebuild the packs and reinstall them on the devices.
 
 On the device (what an install script does)
-  gunzip -c wyse-drivers-sound-$(uname -r).tar.gz | tar -x -C /data/alpine
+  gunzip -c wyse-drivers-3040-sound-$(uname -r).tar.gz | tar -x -C /data/alpine
   chroot /data/alpine depmod $(uname -r)        # apk add kmod first
   printf %s /data/alpine/lib/firmware > /sys/module/firmware_class/parameters/path
   chroot /data/alpine modprobe -a <modules>

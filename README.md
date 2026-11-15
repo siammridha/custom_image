@@ -6,15 +6,20 @@ stay reachable.
 
 ## Build
 
-Clone with `git clone --recursive` (Buildroot is a submodule; `make` also
+Clone with `git clone --recursive` (Buildroot is a submodule; the build also
 fetches it). Open the folder in its dev container (`.devcontainer/`), then:
 
     cp .env.example .env        # fill in your keys
     cp /path/to/ca.crt root_ca.crt   # private root CA of your NetBird server
     ssh-keygen -t ed25519 -N '' -C wyse -f keys/wyse_ed25519
-    make                        # about an hour the first time
+    ./build.sh                  # asks: 3040 or 5020
 
-The image is `/home/vscode/wyse-build/output/images/disk.img`.
+The first build of a model takes about an hour; later builds only redo what
+changed. `./build.sh 3040` skips the question. It also builds that model's
+driver packs. The full log is in `build.log`.
+
+The image is `/home/vscode/wyse-build/output-<model>/images/disk.img`.
+Each model has its own image: the kernel drivers differ.
 
 Your VPN keys and SSH key are baked into the image. Keep built images
 private.
@@ -22,7 +27,8 @@ private.
 ## Install
 
 - New device: write `disk.img` to its eMMC.
-- Running device: `scripts/deploy.sh [ip]`. Keeps `/persist` and `/data`.
+- Running device: `scripts/deploy.sh <model> [ip]`. Keeps `/persist` and
+  `/data`. Refuses if the device runs the other model's image.
 
 ## Apps and drivers
 

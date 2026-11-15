@@ -1,8 +1,14 @@
 #!/bin/sh
-# $1 = target dir
+# $1 = target dir, $2 = model (3040 or 5020, from the Makefile)
 set -e
 T=$1
+MODEL=${2:?model missing (build with: make MODEL=3040 or MODEL=5020)}
 B=$(dirname "$0")
+
+# Which model this image is for. Install scripts use it to pick the right
+# driver packs.
+mkdir -p "$T/etc/wyse"
+echo "$MODEL" > "$T/etc/wyse/model"
 
 # Mount points used by /sbin/preinit.
 mkdir -p "$T/rom" "$T/persist" "$T/media/overlay" "$T/mnt" "$T/data"
