@@ -2,6 +2,7 @@
 //! (run once by init, before the services). Only what can't be fixed in the
 //! image: /etc/hosts, root's SSH keys and the mounts are in the image.
 use crate::config::Config;
+use crate::net;
 use crate::sys;
 use std::collections::BTreeSet;
 use std::fs::{self, DirBuilder};
@@ -74,8 +75,11 @@ pub fn hostname(c: &Config) {
     let _ = fs::write("/etc/hostname", format!("{h}\n"));
 }
 
+/// Loopback up, then DHCP on the network interfaces.
 fn network(c: &Config) {
-    sys::run("ip", &["link", "set", "lo", "up"]);
+    if let Err(e) = net::link_up("lo") {
+        eprintln!("lo: {e}");
+    }
     let mut ifaces = c.words("NET_IFACES");
     if ifaces == ["auto"] {
         ifaces = fs::read_dir("/sys/class/net")
@@ -88,25 +92,12 @@ fn network(c: &Config) {
             .unwrap_or_default();
         ifaces.sort();
     }
-
-    if c.is("NET_MODE", "static") {
-        let Some(i) = ifaces.first() else { return };
-        sys::run("ip", &["link", "set", i, "up"]);
-        sys::run("ip", &["addr", "add", c.get("NET_ADDR"), "dev", i]);
-        let gw = c.get("NET_GW");
-        if !gw.is_empty() {
-            sys::run("ip", &["route", "add", "default", "via", gw, "dev", i]);
+    for i in &ifaces {
+        if let Err(e) = net::link_up(i) {
+            eprintln!("{i}: {e}");
         }
-        let resolv: String = c.words("NET_DNS").iter().map(|d| format!("nameserver {d}\n")).collect();
-        let _ = fs::write("/etc/resolv.conf", resolv);
-    } else {
-        for i in &ifaces {
-            sys::run("ip", &["link", "set", i, "up"]);
-            let pid = format!("/run/udhcpc.{i}.pid");
-            sys::run(
-                "udhcpc",
-                &["-b", "-S", "-i", i, "-p", &pid, "-s", "/usr/libexec/wyse/udhcpc-event"],
-            );
-        }
+        // The lease handler (/usr/libexec/wyse/udhcpc-event) is udhcpc's
+        // built-in default script (busybox.config), so no -s.
+        sys::run("udhcpc", &["-b", "-S", "-i", i]);
     }
 }

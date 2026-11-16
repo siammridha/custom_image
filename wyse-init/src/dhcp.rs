@@ -1,22 +1,27 @@
-//! udhcpc's lease handler (udhcpc -s /usr/libexec/wyse/udhcpc-event, a link
-//! to wyse-init). Does what Buildroot's udhcpc default.script did:
+//! udhcpc's lease handler (/usr/libexec/wyse/udhcpc-event, a link to
+//! wyse-init; udhcpc's default script, set in busybox.config). Does what
+//! Buildroot's udhcpc default.script does, with the kernel calls of
+//! ifconfig and route (see net.rs), so the image needs no `ip` command:
 //!   deconfig       interface up, address 0.0.0.0, drop its DNS lines
 //!   bound / renew  set address, routes and DNS from the lease
-//! udhcpc passes the lease in environment variables. Uses `ip` (the image
-//! has no ifconfig/route), as BusyBox's examples/udhcp/simple.script does.
-use crate::sys;
+//! udhcpc passes the lease in environment variables.
+use crate::net::{self, Route};
 use std::env;
 use std::fs;
 use std::net::Ipv4Addr;
 
 const RESOLV: &str = "/etc/resolv.conf";
+const ANY: Ipv4Addr = Ipv4Addr::UNSPECIFIED;
 
 fn var(k: &str) -> String {
     env::var(k).unwrap_or_default()
 }
 
+fn ip(k: &str) -> Option<Ipv4Addr> {
+    var(k).parse().ok()
+}
+
 pub fn main(action: &str) -> i32 {
-    std::env::set_var("PATH", "/usr/sbin:/usr/bin:/sbin:/bin");
     let iface = var("interface");
     if action.is_empty() || iface.is_empty() {
         eprintln!("udhcpc-event: should be called from udhcpc");
@@ -24,8 +29,8 @@ pub fn main(action: &str) -> i32 {
     }
     match action {
         "deconfig" => {
-            sys::run("ip", &["-4", "addr", "flush", "dev", &iface]);
-            sys::run("ip", &["link", "set", "dev", &iface, "up"]);
+            let _ = net::link_up(&iface);
+            let _ = net::set_addr(&iface, ANY, None, None);
             write_resolv(&iface, &[]);
         }
         "bound" | "renew" => bound(&iface),
@@ -34,46 +39,39 @@ pub fn main(action: &str) -> i32 {
     0
 }
 
-fn bound(iface: &str) {
-    let ip = var("ip");
-    let (bcast, mask) = (var("broadcast"), var("subnet"));
-    let addr = format!("{ip}/{}", prefix_len(&mask).unwrap_or(32));
-    // No broadcast in the lease: "+" works it out from the netmask, as
-    // ifconfig did (simple.script does the same).
-    let bcast = if bcast.is_empty() { "+".to_string() } else { bcast };
-    let args = ["addr", "replace", addr.as_str(), "broadcast", bcast.as_str(), "dev", iface];
-    sys::run("ip", &args);
-    // ifconfig replaced the old address; "ip addr replace" adds a new one
-    // next to it. Remove any other IPv4 address (a renew with a new IP).
-    for old in addresses(iface) {
-        if old != addr {
-            sys::run("ip", &["addr", "del", &old, "dev", iface]);
-        }
+fn report(what: &str, r: std::io::Result<()>) {
+    if let Err(e) = r {
+        eprintln!("udhcpc-event: {what}: {e}");
     }
+}
+
+fn bound(iface: &str) {
+    let Some(addr) = ip("ip") else { return };
+    report("address", net::set_addr(iface, addr, ip("broadcast"), ip("subnet")));
 
     // RFC 3442: with classless static routes, the router option is ignored.
     let statics = var("staticroutes");
-    let router = var("router");
     if !statics.is_empty() {
-        for (dest, gw, mask) in gateway_routes(iface) {
-            let net = format!("{dest}/{}", prefix_len(&mask).unwrap_or(32));
-            sys::run("ip", &["route", "del", &net, "via", &gw, "dev", iface]);
+        for (dst, gw, mask) in gateway_routes(iface) {
+            let _ = net::route_del(iface, &Route { dst, mask, gw: Some(gw), metric: None });
         }
-        let s: Vec<&str> = statics.split_whitespace().collect();
-        for pair in s.chunks(2) {
-            if let [net, gw] = pair {
-                sys::run("ip", &["route", "replace", net, "via", gw, "dev", iface]);
+        for (dst, mask, gw) in parse_static(&statics) {
+            let gw = Some(gw).filter(|g| !g.is_unspecified());
+            report("route", net::route_add(iface, &Route { dst, mask, gw, metric: None }));
+        }
+    } else {
+        let routers: Vec<Ipv4Addr> = var("router").split_whitespace().filter_map(|r| r.parse().ok()).collect();
+        if !routers.is_empty() {
+            let default = Route { dst: ANY, mask: ANY, gw: None, metric: None };
+            for _ in 0..64 {
+                if net::route_del(iface, &default).is_err() {
+                    break;
+                }
             }
-        }
-    } else if !router.is_empty() {
-        for _ in 0..64 {
-            if !sys::run_quiet("ip", &["route", "del", "default", "dev", iface]) {
-                break;
+            for (n, r) in routers.into_iter().enumerate() {
+                let route = Route { dst: ANY, mask: ANY, gw: Some(r), metric: Some(n as u16) };
+                report("default route", net::route_add(iface, &route));
             }
-        }
-        for (n, r) in router.split_whitespace().enumerate() {
-            let metric = n.to_string();
-            sys::run("ip", &["route", "add", "default", "via", r, "dev", iface, "metric", &metric]);
         }
     }
 
@@ -109,38 +107,25 @@ fn resolv_update(old: &str, iface: &str, add: &[String]) -> String {
     out
 }
 
-/// 255.255.255.0 -> 24. None if it is not a valid netmask.
-fn prefix_len(mask: &str) -> Option<u32> {
-    let m = u32::from(mask.parse::<Ipv4Addr>().ok()?);
-    (m.leading_ones() == m.count_ones()).then(|| m.count_ones())
-}
-
-/// The IPv4 addresses on `iface`, as "a.b.c.d/nn".
-fn addresses(iface: &str) -> Vec<String> {
-    let out = std::process::Command::new("ip")
-        .args(["-4", "-o", "addr", "show", "dev", iface])
-        .output()
-        .map(|o| String::from_utf8_lossy(&o.stdout).into_owned())
-        .unwrap_or_default();
-    parse_addresses(&out)
-}
-
-fn parse_addresses(out: &str) -> Vec<String> {
-    out.lines()
-        .filter_map(|l| {
-            let f: Vec<&str> = l.split_whitespace().collect();
-            let i = f.iter().position(|w| *w == "inet")?;
-            f.get(i + 1).map(|a| a.to_string())
+/// "net/len gw net/len gw ..." (udhcpc's staticroutes) -> (net, mask, gw).
+fn parse_static(s: &str) -> Vec<(Ipv4Addr, Ipv4Addr, Ipv4Addr)> {
+    let w: Vec<&str> = s.split_whitespace().collect();
+    w.chunks(2)
+        .filter_map(|p| {
+            let (net, len) = p.first()?.split_once('/')?;
+            let len: u32 = len.parse().ok().filter(|l| *l <= 32)?;
+            let mask = Ipv4Addr::from(u32::MAX.checked_shl(32 - len).unwrap_or(0));
+            Some((net.parse().ok()?, mask, p.get(1)?.parse().ok()?))
         })
         .collect()
 }
 
 /// Routes on `iface` that go through a gateway: (dest, gateway, mask).
-fn gateway_routes(iface: &str) -> Vec<(String, String, String)> {
+fn gateway_routes(iface: &str) -> Vec<(Ipv4Addr, Ipv4Addr, Ipv4Addr)> {
     parse_routes(&fs::read_to_string("/proc/net/route").unwrap_or_default(), iface)
 }
 
-fn parse_routes(table: &str, iface: &str) -> Vec<(String, String, String)> {
+fn parse_routes(table: &str, iface: &str) -> Vec<(Ipv4Addr, Ipv4Addr, Ipv4Addr)> {
     let ip = |h: &str| u32::from_str_radix(h, 16).map(|v| Ipv4Addr::from(v.to_le_bytes()));
     table
         .lines()
@@ -151,7 +136,7 @@ fn parse_routes(table: &str, iface: &str) -> Vec<(String, String, String)> {
                 return None;
             }
             let (dest, gw, mask) = (ip(f[1]).ok()?, ip(f[2]).ok()?, ip(f[7]).ok()?);
-            (!gw.is_unspecified()).then(|| (dest.to_string(), gw.to_string(), mask.to_string()))
+            (!gw.is_unspecified()).then_some((dest, gw, mask))
         })
         .collect()
 }
@@ -169,19 +154,17 @@ mod tests {
     }
 
     #[test]
-    fn netmask() {
-        assert_eq!(prefix_len("255.255.255.0"), Some(24));
-        assert_eq!(prefix_len("255.255.255.255"), Some(32));
-        assert_eq!(prefix_len("0.0.0.0"), Some(0));
-        assert_eq!(prefix_len("255.0.255.0"), None);
-        assert_eq!(prefix_len(""), None);
-    }
-
-    #[test]
-    fn ip_addr_output() {
-        let out = "2: eth0    inet 192.168.80.13/24 brd 192.168.80.255 scope global eth0\\       valid_lft forever preferred_lft forever\n\
-                   2: eth0    inet 10.0.0.5/8 scope global secondary eth0\n";
-        assert_eq!(parse_addresses(out), ["192.168.80.13/24", "10.0.0.5/8"]);
+    fn static_routes() {
+        let r = parse_static("10.0.0.0/8 192.168.80.1 0.0.0.0/0 192.168.80.2 1.2.3.4/32 0.0.0.0 bad");
+        let a = |s: &str| s.parse::<Ipv4Addr>().unwrap();
+        assert_eq!(
+            r,
+            [
+                (a("10.0.0.0"), a("255.0.0.0"), a("192.168.80.1")),
+                (a("0.0.0.0"), a("0.0.0.0"), a("192.168.80.2")),
+                (a("1.2.3.4"), a("255.255.255.255"), a("0.0.0.0")),
+            ]
+        );
     }
 
     #[test]
@@ -192,7 +175,7 @@ mod tests {
                  eth1\t00000000\t0101A8C0\t0003\t0\t0\t0\t00000000\t0\t0\t0\n";
         assert_eq!(
             parse_routes(t, "eth0"),
-            [("0.0.0.0".to_string(), "192.168.80.1".to_string(), "0.0.0.0".to_string())]
+            [(Ipv4Addr::UNSPECIFIED, Ipv4Addr::new(192, 168, 80, 1), Ipv4Addr::UNSPECIFIED)]
         );
     }
 }

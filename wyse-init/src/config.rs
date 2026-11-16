@@ -73,12 +73,12 @@ mod tests {
     fn parses_like_the_shell() {
         let mut c = Config(HashMap::new());
         c.parse(
-            "# comment\nHOSTNAME=wyse\nNET_DNS=\"1.1.1.1 8.8.8.8\"\nTS_UP_ARGS='--ssh'\n\
+            "# comment\nHOSTNAME=wyse\nNTP_SERVERS=\"a.pool b.pool\"\nTS_UP_ARGS='--ssh'\n\
              EMPTY=\"\"\nBAD KEY=x\nNTP=pool.ntp.org # trailing\n",
         );
         c.parse("HOSTNAME=\"wyse-test\"\n");
         assert_eq!(c.get("HOSTNAME"), "wyse-test");
-        assert_eq!(c.words("NET_DNS"), ["1.1.1.1", "8.8.8.8"]);
+        assert_eq!(c.words("NTP_SERVERS"), ["a.pool", "b.pool"]);
         assert_eq!(c.get("TS_UP_ARGS"), "--ssh");
         assert_eq!(c.get("EMPTY"), "");
         assert_eq!(c.get("NTP"), "pool.ntp.org");

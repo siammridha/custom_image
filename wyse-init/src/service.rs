@@ -25,31 +25,31 @@ pub fn main(name: &str) {
             // Hardware watchdog: if this stops feeding it (system frozen),
             // the hardware resets the device after 60 s.
             if !Path::new("/dev/watchdog").exists() {
-                sys::run("modprobe", &["softdog", "soft_margin=60"]);
+                sys::run("modprobe", &["softdog"]);
             }
             if !Path::new("/dev/watchdog").exists() {
                 sys::idle();
             }
-            start(-20, "watchdog", &["-F", "-T", "60", "-t", "10", "/dev/watchdog"]);
+            // Reset after 60 s: the default of both watchdog -T and softdog.
+            start(-20, "watchdog", &["-F", "-t", "10", "/dev/watchdog"]);
         }
         "netbird" => {
             on(&c, "NETBIRD");
             let _ = fs::create_dir_all("/var/log/netbird");
-            start(-10, "netbird", &["service", "run", "--log-file", "/var/log/netbird/client.log"]);
+            // Logs to its default, /var/log/netbird/client.log.
+            start(-10, "netbird", &["service", "run"]);
         }
         "tailscaled" => {
             on(&c, "TAILSCALE");
-            let _ = fs::create_dir_all("/run/tailscale");
-            start(
-                -10,
-                "tailscaled",
-                &["--statedir=/var/lib/tailscale", "--socket=/run/tailscale/tailscaled.sock"],
-            );
+            // The socket is the default, /var/run/tailscale/tailscaled.sock
+            // (tailscaled makes the folder).
+            start(-10, "tailscaled", &["--statedir=/var/lib/tailscale"]);
         }
         "dropbear" => {
             on(&c, "SSH");
             sys::umask(0o077);
-            start(-10, "dropbear", &["-F", "-R", "-s"]);
+            // No password logins: built without them (dropbear-localoptions.h).
+            start(-10, "dropbear", &["-F", "-R"]);
         }
         "ntpd" => {
             let servers = c.words("NTP_SERVERS");

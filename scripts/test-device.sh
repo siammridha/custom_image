@@ -24,7 +24,7 @@ waitup() { sleep 20; for i in $(seq 40); do $S true 2>/dev/null && break; sleep 
 echo "#### deploy"
 scripts/deploy.sh "$MODEL" "$IP" </dev/null 2>&1 | grep -E "md5|rebooting|FAIL|rror"
 waitup
-$S 'ip route | grep default; netbird status | grep -E "Management|Signal"; tailscale status | grep -c .
+$S 'grep -c "	00000000	" /proc/net/route; netbird status | grep -E "Management|Signal"; tailscale status | grep -c .
 for a in sv runsv runsvdir chroot renice cp; do command -v $a >/dev/null && echo "still there: $a"; done; true'
 
 echo "#### fresh /data/alpine"

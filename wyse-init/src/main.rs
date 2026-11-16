@@ -16,6 +16,7 @@ mod boot;
 mod config;
 mod dhcp;
 mod guard;
+mod net;
 mod preinit;
 mod service;
 mod sys;
