@@ -14,6 +14,10 @@
   its source first), not on memory or a spec.
 - Long commands on the device (flashing, big transfers): run them in the
   background and use `ssh -n`. A foreground run once looked frozen.
+- Every build: the user must see its progress. Build with `./build.sh <model>`
+  run in the background: it prints the progress bar to the shell output
+  (full log in `build.log`). Do not run `make` with its output sent to a file
+  instead.
 
 # What this is
 

@@ -16,7 +16,9 @@ DL  := $(or $(WYSE_DL),/home/vscode/wyse-build/dl)
 JOBS ?= 6
 # Run Buildroot as a top-level make (as a sub-make it corrupts its
 # generated br2-external files).
-BRMAKE = env -u MAKELEVEL -u MAKEFLAGS -u MFLAGS BR2_DL_DIR=$(DL) \
+# XZ_DEFAULTS=-T1: xz unpacks with one thread. With threads, one gcc archive
+# took 1.35 GB of RAM (66 MB with one); three at once ran out of memory.
+BRMAKE = env -u MAKELEVEL -u MAKEFLAGS -u MFLAGS BR2_DL_DIR=$(DL) XZ_DEFAULTS=-T1 \
 	make -j$(JOBS) -l$(shell nproc) -C $(BR) BR2_EXTERNAL=$(EXT) O=$(OUT)
 GOALS := $(or $(MAKECMDGOALS),all)
 PATCH := $(CURDIR)/patches/buildroot-wyse.patch
