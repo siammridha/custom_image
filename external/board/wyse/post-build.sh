@@ -23,6 +23,7 @@ install -m 0755 "$BUILD_DIR/wyse-init/x86_64-unknown-linux-musl/release/wyse-ini
 ln -sf wyse-init "$T/sbin/preinit"
 mkdir -p "$T/usr/libexec/wyse"
 ln -sf /sbin/wyse-init "$T/usr/libexec/wyse/udhcpc-event"
+ln -sf /sbin/wyse-init "$T/usr/sbin/alpine"
 
 # Alpine mini root filesystem. Unpacked into /data/alpine when that is
 # missing, so apk works again after wyse-wipe-data, even offline.
@@ -141,16 +142,19 @@ sed -i -e 's|^tmpfs\t\t/tmp\t\ttmpfs\tmode=1777\t|tmpfs\t\t/tmp\t\ttmpfs\tmode=1
 	"$T/etc/fstab"
 
 # Mounts for the apps (cgroup) and the Alpine folder, done by "mount -a" at
-# boot. nofail: skipped while /data/alpine does not exist yet; apps-setup
-# runs "mount -a" again after unpacking it.
+# boot. nofail: skipped while /data/alpine does not exist yet; wyse-init
+# runs "mount -a" again after unpacking it. /sys without its sub-mounts:
+# Alpine's OpenRC then leaves the cgroups alone, so the apps stay in the
+# apps cgroup. The main /proc: ps and top in Alpine see every process.
+# Alpine's /run is mounted by wyse-init each time Alpine starts
+# (wyse-init/src/alpine.rs).
 sed -i -e '\|^cgroup2\t|d' -e '\|/data/alpine/|d' "$T/etc/fstab"
 cat >> "$T/etc/fstab" <<'FSTAB'
 cgroup2		/sys/fs/cgroup	cgroup2	nofail	0	0
-proc		/data/alpine/proc	proc	nofail	0	0
-/sys		/data/alpine/sys	none	rbind,nofail	0	0
+/proc		/data/alpine/proc	none	bind,nofail	0	0
+/sys		/data/alpine/sys	none	bind,nofail	0	0
 /dev		/data/alpine/dev	none	rbind,nofail	0	0
 /tmp		/data/alpine/tmp	none	bind,nofail	0	0
-run		/data/alpine/run	tmpfs	size=32m,mode=0755,nofail	0	0
 FSTAB
 
 # No password login for root (SSH key only).
@@ -201,8 +205,9 @@ if [ -f "$ENV" ]; then
 fi
 chmod 0600 "$K"
 
-# The Alpine archive, trimmed and with the private root CA (see alpine-root.sh).
+# The Alpine archive, with OpenRC, trimmed and with the private root CA
+# (see alpine-root.sh).
 mkdir -p "$T/usr/share/wyse"
 "$HOST_DIR/bin/fakeroot" -- sh "$B/alpine-root.sh" "$AD/$AF" \
-	"$T/usr/share/wyse/alpine-minirootfs.tar.gz" "$BUILD_DIR/wyse-alpine" "$CA"
+	"$T/usr/share/wyse/alpine-minirootfs.tar" "$BUILD_DIR/wyse-alpine" "$AD" "$CA"
 

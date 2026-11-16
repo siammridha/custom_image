@@ -11,7 +11,9 @@
     // from the existing image on next open.
     "runArgs": ["--rm"],
     // `|| true`: the folder may not be a git repo yet; runs again on every open.
-    "postCreateCommand": "git config core.hooksPath hooks 2>/dev/null || true",
+    // The update-index refresh clears the Buildroot symlinks that git lists as
+    // changed after a container start (see git.detectSubmodules below).
+    "postCreateCommand": "git config core.hooksPath hooks 2>/dev/null; git -C buildroot update-index -q --really-refresh >/dev/null 2>&1; true",
     // The build volume below is created owned by root.
     "postStartCommand": "sudo chown vscode:vscode /home/vscode/wyse-build",
     "remoteEnv": {
@@ -71,7 +73,14 @@
         "vscode": {
             "extensions": [
                 "spencerwmiles.vscode-task-buttons"
-            ]
+            ],
+            "settings": {
+                // The Mac file sharing reports symlink sizes as 0 after a
+                // container start, so git lists ~170 Buildroot symlinks as
+                // changed (they work). Our real Buildroot edits are in
+                // patches/buildroot-wyse.patch.
+                "git.detectSubmodules": false
+            }
         }
     }
 }

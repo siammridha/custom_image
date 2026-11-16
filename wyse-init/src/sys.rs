@@ -34,15 +34,20 @@ extern "C" {
     fn dup2(old: c_int, new: c_int) -> c_int;
     #[link_name = "umask"]
     fn c_umask(mask: c_uint) -> c_uint;
+    fn signal(sig: c_int, handler: usize) -> usize;
     fn openlog(ident: *const c_char, opt: c_int, facility: c_int);
     #[link_name = "syslog"]
     fn c_syslog(pri: c_int, fmt: *const c_char, ...);
 }
 
+pub const MS_NOSUID: u64 = 2;
+pub const MS_NODEV: u64 = 4;
 pub const MS_NOATIME: u64 = 1024;
 pub const MS_MOVE: u64 = 8192;
 pub const SIGKILL: i32 = 9;
 pub const SIGTERM: i32 = 15;
+const MNT_DETACH: c_int = 2;
+const SIG_IGN: usize = 1;
 const SYS_PIVOT_ROOT: c_long = 155; // x86_64
 const RB_AUTOBOOT: c_int = 0x0123_4567;
 const LOG_USER: c_int = 8;
@@ -71,6 +76,20 @@ pub fn mount_fs(src: &str, target: &str, fstype: &str, flags: u64, data: &str) -
 pub fn umount(target: &str) -> io::Result<()> {
     let t = cs(target);
     check(unsafe { umount2(t.as_ptr(), 0) })
+}
+
+/// umount -l
+pub fn umount_detach(target: &str) -> io::Result<()> {
+    let t = cs(target);
+    check(unsafe { umount2(t.as_ptr(), MNT_DETACH) })
+}
+
+/// Ignore Ctrl-C and Ctrl-\ (while a child runs in the foreground).
+pub fn ignore_interrupts() {
+    unsafe {
+        signal(2, SIG_IGN);
+        signal(3, SIG_IGN);
+    }
 }
 
 pub fn chroot(path: &str) -> io::Result<()> {

@@ -11,10 +11,13 @@ EXT := $(CURDIR)/external
 # One output folder per model (different kernels); downloads are shared.
 OUT := $(or $(WYSE_OUT),/home/vscode/wyse-build/output-$(MODEL))
 DL  := $(or $(WYSE_DL),/home/vscode/wyse-build/dl)
+# Packages built at the same time (each uses up to BR2_JLEVEL cores). No new
+# package starts while the load is above the number of cores.
+JOBS ?= 6
 # Run Buildroot as a top-level make (as a sub-make it corrupts its
 # generated br2-external files).
 BRMAKE = env -u MAKELEVEL -u MAKEFLAGS -u MFLAGS BR2_DL_DIR=$(DL) \
-	make -C $(BR) BR2_EXTERNAL=$(EXT) O=$(OUT)
+	make -j$(JOBS) -l$(shell nproc) -C $(BR) BR2_EXTERNAL=$(EXT) O=$(OUT)
 GOALS := $(or $(MAKECMDGOALS),all)
 PATCH := $(CURDIR)/patches/buildroot-wyse.patch
 # The model's config: wyse_defconfig plus the model's kernel fragment, and

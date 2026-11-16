@@ -5,7 +5,7 @@
 //! A service that is turned off in the settings just waits, so init does
 //! not keep restarting it.
 use crate::config::Config;
-use crate::{apps, guard, sys};
+use crate::{alpine, guard, sys};
 use std::fs;
 use std::os::unix::process::CommandExt;
 use std::path::Path;
@@ -67,18 +67,10 @@ pub fn main(name: &str) {
             guard::main(&c);
         }
         "apps" => {
-            // Apps: one folder per app in /data/services, each with an
-            // executable "run" file that runs the app in the foreground
-            // (runit style). Started after the VPNs, with low priority, first
-            // to be killed when RAM runs out, and limited in RAM together.
+            // The Alpine subsystem, which starts the apps (alpine.rs).
+            // Started after the VPNs.
             sys::sleep(20);
-            if apps::setup(false).is_err() {
-                sys::idle();
-            }
-            sys::put("/sys/fs/cgroup/apps/cgroup.procs", &std::process::id().to_string());
-            sys::put("/proc/self/oom_score_adj", "500");
-            let _ = fs::create_dir_all("/data/services");
-            start(10, "runsvdir", &["-P", "/data/services"]);
+            alpine::run();
         }
         _ => sys::idle(),
     }

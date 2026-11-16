@@ -39,9 +39,12 @@ keeps the main system small and unchanged.
   `/data`).
 - `alpine` opens a shell inside it; `alpine <cmd>` runs one command in it.
   `exit` goes back to the main system.
-- All apps run inside it (with `chroot`). The main system starts and
-  watches them: runsvdir runs `/data/services/<name>/run` (`sv status`,
-  `sv restart <name>`).
+- All apps run inside it (with `chroot`). wyse-init starts Alpine's
+  OpenRC, which starts the apps; each app's `supervise-daemon` restarts it
+  when it stops (`alpine rc-status`, `alpine rc-service <name> restart`).
+  At shutdown `openrc shutdown` stops the apps cleanly.
+- It shares the main system's processes: `alpine ps` and `alpine top` show
+  everything.
 - It has its own busybox (Alpine's). The main system's busybox has only the
   commands the main system uses.
 - SSH, NetBird and Tailscale stay in the main system.

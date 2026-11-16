@@ -9,7 +9,8 @@
 #   - packages go into the Alpine folder (/data/alpine)
 #   - the sound drivers are a driver pack made for this image's kernel
 #     (drivers/build.sh 3040 sound), not part of the image
-#   - the service is /data/services/audio-player/run instead of OpenRC
+#   - the OpenRC service runs in the Alpine subsystem, is restarted if it
+#     stops, and loads the drivers before it starts
 set -eu
 
 REPO=siammridha/audio_player
@@ -19,7 +20,7 @@ PACK_NAME=wyse-drivers-$MODEL-sound-$KREL.tar.gz
 PACK=${1:-}
 DRIVERS_URL=${DRIVERS_URL:-}   # optional: folder URL holding $PACK_NAME
 A=/data/alpine
-S=/data/services/audio-player
+MODULES="snd-soc-rt5670 snd-soc-sst-cht-bsw-rt5672 snd-sof-acpi-intel-byt snd-usb-audio"
 
 [ "$(id -u)" = 0 ] || { echo "Run this as root." >&2; exit 1; }
 # The built-in sound setup below (SOF driver, rt5672 card) is the 3040's.
@@ -37,9 +38,10 @@ if [ -n "$PACK" ] || ! grep -qs snd-sof-acpi-intel-byt "$A/lib/modules/$KREL/mod
 		PACK=$A/tmp/$PACK_NAME
 	fi
 	[ -n "$PACK" ] && [ -f "$PACK" ] || { echo "Need $PACK_NAME (argument or DRIVERS_URL)." >&2; exit 1; }
-	gunzip -c "$PACK" | tar -x -C "$A"
+	# The main system has no gunzip: Alpine's tar unpacks it.
+	alpine tar -xzf - -C / < "$PACK"
 	# Other apps' packs share this folder: index all of them together.
-	chroot "$A" depmod "$KREL"
+	alpine depmod "$KREL"
 fi
 
 echo "Downloading the latest release of $REPO..."
@@ -49,34 +51,46 @@ chmod 755 "$A/usr/local/bin/audio-player.new"
 mv "$A/usr/local/bin/audio-player.new" "$A/usr/local/bin/audio-player"
 mkdir -p "$A/var/lib/audio-player/audio"
 
-mkdir -p "$S"
-cat > "$S/run.new" <<'EOF'
-#!/bin/sh
-# audio-player (installed by apps/audio-player/install.sh)
-A=/data/alpine
-# Firmware and drivers live in the Alpine folder, not in the image.
-printf %s "$A/lib/firmware" > /sys/module/firmware_class/parameters/path
-chroot "$A" modprobe -a snd-soc-rt5670 snd-soc-sst-cht-bsw-rt5672 \
-	snd-sof-acpi-intel-byt snd-usb-audio
-# The built-in card appears once the sound chip's firmware has loaded.
-i=0
-while [ $i -lt 20 ] && ! grep -q rt5672 /proc/asound/cards 2>/dev/null; do
-	sleep 1; i=$((i + 1))
-done
-exec alpine /bin/sh -c '
-	mkdir -p /run/lock   # alsactl needs it; /run is empty after boot
-	alsactl restore 2>/dev/null
-	export PORT=3000 RUST_LOG=error
-	export MUSIC_DIR=/var/lib/audio-player/audio
-	export STATE_FILE=/var/lib/audio-player/state.json
-	exec /usr/local/bin/audio-player >> /var/log/audio-player.log 2>&1'
+cat > "$A/etc/init.d/audio-player" <<EOF
+#!/sbin/openrc-run
+
+name="audio-player"
+description="Web-controlled audio player"
+
+command="/usr/local/bin/audio-player"
+supervisor=supervise-daemon
+pidfile="/run/\${RC_SVCNAME}.pid"
+output_log="/var/log/audio-player.log"
+error_log="/var/log/audio-player.log"
+
+: "\${PORT:=3000}"
+: "\${MUSIC_DIR:=/var/lib/audio-player/audio}"
+: "\${STATE_FILE:=/var/lib/audio-player/state.json}"
+export PORT MUSIC_DIR STATE_FILE AUDIO_DEVICE RUST_LOG
+
+depend() {
+	need net
+}
+
+# Firmware and drivers live in the Alpine folder, not in the image. The
+# kernel reads firmware by its path in the main system. The built-in card
+# appears once the sound chip's firmware has loaded.
+start_pre() {
+	printf %s $A/lib/firmware > /sys/module/firmware_class/parameters/path
+	modprobe -a $MODULES
+	i=0
+	while [ \$i -lt 20 ] && ! grep -q rt5672 /proc/asound/cards 2>/dev/null; do
+		sleep 1; i=\$((i + 1))
+	done
+	alsactl restore 2>/dev/null || true
+}
 EOF
-chmod 755 "$S/run.new"
+chmod 755 "$A/etc/init.d/audio-player"
+echo 'export RUST_LOG=error' > "$A/etc/conf.d/audio-player"
 
 # Load the drivers now, to set up the headphone output below.
-sv down "$S" 2>/dev/null || true
 printf %s "$A/lib/firmware" > /sys/module/firmware_class/parameters/path
-chroot "$A" modprobe -a snd-soc-rt5670 snd-soc-sst-cht-bsw-rt5672 snd-sof-acpi-intel-byt snd-usb-audio
+alpine modprobe -a $MODULES
 i=0
 while [ $i -lt 20 ] && ! grep -q rt5672 /proc/asound/cards; do sleep 1; i=$((i + 1)); done
 grep -q rt5672 /proc/asound/cards || echo "Warning: built-in sound card not found (see dmesg)." >&2
@@ -85,7 +99,6 @@ grep -q rt5672 /proc/asound/cards || echo "Warning: built-in sound card not foun
 # output routing switched off. Saved with alsactl, restored by the service.
 echo "Enabling headphone output routing..."
 alpine /bin/sh -c '
-	mkdir -p /run/lock
 	for c in "DAC1 MIXL DAC1" "DAC1 MIXR DAC1" "HPOVOL MIXL DAC1" \
 		"HPOVOL MIXR DAC1" "HPO MIX DAC1" "HPO MIX HPVOL"; do
 		amixer -c rt5672 sset "$c" on >/dev/null 2>&1
@@ -93,7 +106,7 @@ alpine /bin/sh -c '
 	amixer -c rt5672 sset HP 100% >/dev/null 2>&1
 	alsactl store 2>/dev/null' || true
 
-mv "$S/run.new" "$S/run"
-sv up "$S" 2>/dev/null || true
-echo "audio-player installed. It starts within a few seconds:"
+alpine rc-update add audio-player default >/dev/null
+alpine rc-service audio-player restart
+echo "audio-player installed:"
 echo "  http://<device-ip>:3000    music: $A/var/lib/audio-player/audio"

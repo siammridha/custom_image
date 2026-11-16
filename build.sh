@@ -32,7 +32,13 @@ CA=$(sed -n 's/^ROOT_CA=//p' .env | tr -d '"\r')
 
 echo "Building the Wyse $MODEL image (log: build.log)..."
 start=$(date +%s)
-if ! make MODEL=$MODEL > build.log 2>&1; then
+make MODEL=$MODEL > build.log 2>&1 &
+BUILD=$!
+# Progress bar (scripts/build-progress.sh) once the config exists.
+O=/home/vscode/wyse-build/output-$MODEL
+while kill -0 $BUILD 2>/dev/null && ! [ -f "$O/build/build-time.log" ]; do sleep 2; done
+kill -0 $BUILD 2>/dev/null && WYSE_BUILD_PID=$BUILD scripts/build-progress.sh "$MODEL" || true
+if ! wait $BUILD; then
 	tail -n 20 build.log
 	echo "Build failed. See build.log." >&2
 	exit 1

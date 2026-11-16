@@ -1,5 +1,5 @@
-//! `wyse-init apps-setup [alpine]`: prepares the app environment. Safe to
-//! run again (skips what is done). With "alpine": the Alpine folder only.
+//! Prepares the app environment before the Alpine subsystem starts
+//! (alpine.rs). Safe to run again (skips what is done).
 //!
 //! cgroup /sys/fs/cgroup/apps: every app runs in it. All apps together may
 //! use at most (RAM - 256 MB), and get a low CPU share, so the system and
@@ -8,22 +8,20 @@
 //! Alpine folder /data/alpine: apk and the packages it installs live only
 //! there. It is unpacked from the image when missing (also after
 //! wyse-wipe-data). /proc, /sys, /dev and /tmp are shared with the system
-//! (mounts in /etc/fstab).
+//! (mounts in /etc/fstab); /run is its own (alpine.rs).
 use crate::sys;
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
-use std::process::{Command, Stdio};
+use std::process::Command;
 
 const A: &str = "/data/alpine";
-const TARBALL: &str = "/usr/share/wyse/alpine-minirootfs.tar.gz";
+const TARBALL: &str = "/usr/share/wyse/alpine-minirootfs.tar";
 
-pub fn setup(alpine_only: bool) -> Result<(), String> {
+pub fn setup() -> Result<(), String> {
     if !sys::mounted("/data") {
         return Err("/data is not mounted".into());
     }
-    if !alpine_only {
-        cgroup();
-    }
+    cgroup();
     let apk = format!("{A}/sbin/apk");
     let ok = fs::metadata(&apk).map(|m| m.is_file() && m.permissions().mode() & 0o111 != 0).unwrap_or(false);
     if !ok {
@@ -60,20 +58,12 @@ fn unpack() -> Result<(), String> {
     let new = format!("{A}.new");
     let _ = fs::remove_dir_all(&new);
     fs::create_dir_all(&new).map_err(|e| format!("{new}: {e}"))?;
-    let mut gz = Command::new("gunzip")
-        .args(["-c", TARBALL])
-        .stdout(Stdio::piped())
-        .spawn()
-        .map_err(|e| format!("gunzip: {e}"))?;
-    let out = gz.stdout.take().ok_or("gunzip: no output")?;
-    let tar_ok = Command::new("tar")
-        .args(["-xf", "-", "-C", &new])
-        .stdin(out)
+    let ok = Command::new("tar")
+        .args(["-xf", TARBALL, "-C", &new])
         .status()
         .map(|s| s.success())
         .unwrap_or(false);
-    let gz_ok = gz.wait().map(|s| s.success()).unwrap_or(false);
-    if !(tar_ok && gz_ok) {
+    if !ok {
         return Err("unpacking Alpine failed".into());
     }
     fs::rename(&new, A).map_err(|e| format!("rename {new}: {e}"))

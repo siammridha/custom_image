@@ -69,5 +69,9 @@ BR2_PACKAGE_HOST_GENIMAGE=y
 BR2_PACKAGE_HOST_DOSFSTOOLS=y
 BR2_PACKAGE_HOST_MTOOLS=y
 BR2_GLOBAL_PATCH_DIR="$(BR2_EXTERNAL_WYSE_PATH)/patches"
+# Build up to 6 packages at a time (make -j6 in the top Makefile), each with
+# up to 3 cores, so gcc and the kernel are not stuck on one core when nothing
+# else can build. Building packages in parallel needs per-package directories.
 BR2_JLEVEL=3
+BR2_PER_PACKAGE_DIRECTORIES=y
 BR2_PACKAGE_HOST_LINUX_HEADERS_CUSTOM_6_18=y

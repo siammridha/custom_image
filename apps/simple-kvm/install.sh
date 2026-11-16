@@ -10,7 +10,8 @@
 #   - the GPU, capture card and USB serial drivers are a driver pack made
 #     for this image's kernel (drivers/build.sh 3040 kvm), not part of the
 #     image
-#   - the service is /data/services/simple-kvm/run instead of OpenRC
+#   - the OpenRC service runs in the Alpine subsystem, is restarted if it
+#     stops, and loads the drivers before it starts
 #   - it listens on port 3001 (audio-player has 3000)
 set -eu
 
@@ -23,7 +24,6 @@ PACK=${1:-}
 DRIVERS_URL=${DRIVERS_URL:-}   # optional: folder URL holding $PACK_NAME
 MODULES="i915 uvcvideo ch341"
 A=/data/alpine
-S=/data/services/simple-kvm
 
 [ "$(id -u)" = 0 ] || { echo "Run this as root." >&2; exit 1; }
 # The encoder needs the Intel GPU (i965 VA-API driver): the 3040's.
@@ -41,14 +41,15 @@ if [ -n "$PACK" ] || ! grep -qs '/i915.ko' "$A/lib/modules/$KREL/modules.dep"; t
 		PACK=$A/tmp/$PACK_NAME
 	fi
 	[ -n "$PACK" ] && [ -f "$PACK" ] || { echo "Need $PACK_NAME (argument or DRIVERS_URL)." >&2; exit 1; }
-	gunzip -c "$PACK" | tar -x -C "$A"
+	# The main system has no gunzip: Alpine's tar unpacks it.
+	alpine tar -xzf - -C / < "$PACK"
 	# Other apps' packs share this folder: index all of them together.
-	chroot "$A" depmod "$KREL"
+	alpine depmod "$KREL"
 fi
 
 # Load the drivers now, to check the encoder below.
 printf %s "$A/lib/firmware" > /sys/module/firmware_class/parameters/path
-chroot "$A" modprobe -a $MODULES
+alpine modprobe -a $MODULES
 i=0
 while [ $i -lt 10 ] && ! ls /dev/dri/renderD* >/dev/null 2>&1; do sleep 1; i=$((i + 1)); done
 ls /dev/dri/renderD* >/dev/null 2>&1 || { echo "No GPU render device (/dev/dri/renderD*), see dmesg." >&2; exit 1; }
@@ -68,26 +69,40 @@ alpine wget -qO /usr/local/bin/simple_kvm.new "https://github.com/$REPO/releases
 chmod 755 "$A/usr/local/bin/simple_kvm.new"
 mv "$A/usr/local/bin/simple_kvm.new" "$A/usr/local/bin/simple_kvm"
 
-mkdir -p "$S"
-cat > "$S/run.new" <<EOF
-#!/bin/sh
-# simple_kvm (installed by apps/simple-kvm/install.sh)
-A=$A
+cat > "$A/etc/init.d/simple_kvm" <<EOF
+#!/sbin/openrc-run
+
+name="simple_kvm"
+description="Simple KVM"
+
+command="/usr/local/bin/simple_kvm"
+supervisor=supervise-daemon
+pidfile="/run/\${RC_SVCNAME}.pid"
+output_log="/var/log/simple_kvm.log"
+error_log="/var/log/simple_kvm.log"
+export HTTP_PORT=$PORT
+
+depend() {
+	need net
+}
+
 # Drivers live in the Alpine folder, not in the image. Loaded at start so
-# the capture card and serial adapter work when plugged in later.
-printf %s "\$A/lib/firmware" > /sys/module/firmware_class/parameters/path
-chroot "\$A" modprobe -a $MODULES
-i=0
-while [ \$i -lt 10 ] && ! ls /dev/dri/renderD* >/dev/null 2>&1; do
-	sleep 1; i=\$((i + 1))
-done
-exec alpine /bin/sh -c '
-	export HTTP_PORT=$PORT RUST_LOG=info
-	exec /usr/local/bin/simple_kvm >> /var/log/simple_kvm.log 2>&1'
+# the capture card and serial adapter work when plugged in later. The
+# kernel reads firmware by its path in the main system.
+start_pre() {
+	printf %s $A/lib/firmware > /sys/module/firmware_class/parameters/path
+	modprobe -a $MODULES
+	i=0
+	while [ \$i -lt 10 ] && ! ls /dev/dri/renderD* >/dev/null 2>&1; do
+		sleep 1; i=\$((i + 1))
+	done
+	return 0
+}
 EOF
-chmod 755 "$S/run.new"
-mv "$S/run.new" "$S/run"
-# runsvdir starts a new service by itself; restart an existing one.
-sv restart "$S" >/dev/null 2>&1 || true
-echo "simple_kvm installed. It starts within a few seconds:"
+chmod 755 "$A/etc/init.d/simple_kvm"
+echo 'export RUST_LOG=info' > "$A/etc/conf.d/simple_kvm"
+
+alpine rc-update add simple_kvm default >/dev/null
+alpine rc-service simple_kvm restart
+echo "simple_kvm installed:"
 echo "  http://<device-ip>:$PORT    log: $A/var/log/simple_kvm.log"

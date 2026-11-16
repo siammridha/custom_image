@@ -26,8 +26,10 @@ null::sysinit:/bin/ln -sf /proc/self/fd/2 /dev/stderr
 ::respawn:/sbin/wyse-init run ntpd
 ::respawn:/sbin/wyse-init run vpn-guard
 
-# Apps from /data/services (low priority, RAM-limited).
+# The Alpine subsystem: its own init and OpenRC start the apps (low
+# priority, RAM-limited).
 ::respawn:/sbin/wyse-init run apps
 
 # Before rebooting
+::shutdown:/sbin/wyse-init stop-apps
 ::shutdown:/bin/umount -a -r

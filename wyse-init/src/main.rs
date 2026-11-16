@@ -6,9 +6,11 @@
 //!   wyse-init boot                  once from inittab: persist folders,
 //!                                   drivers, host name, network, SSH keys
 //!   wyse-init run <service>         from inittab (respawn): starts one service
+//!   wyse-init stop-apps             from inittab at shutdown: stops the apps
 //!   wyse-init hostname              apply the host name again (setup-os)
-//!   wyse-init apps-setup [alpine]   prepare the apps cgroup and /data/alpine
+//!   alpine (link)                   run a command in the Alpine subsystem
 //!   udhcpc-event (link)             udhcpc's lease handler
+mod alpine;
 mod apps;
 mod boot;
 mod config;
@@ -29,6 +31,7 @@ fn main() {
 
     match name.as_str() {
         "preinit" => preinit::main(),
+        "alpine" => alpine::enter(&args[1..]),
         "udhcpc-event" => exit(dhcp::main(args.get(1).map(String::as_str).unwrap_or(""))),
         _ => {}
     }
@@ -37,15 +40,10 @@ fn main() {
     match arg(1) {
         "boot" => boot::main(),
         "run" => service::main(arg(2)),
+        "stop-apps" => alpine::stop(),
         "hostname" => boot::hostname(&config::Config::load()),
-        "apps-setup" => {
-            if let Err(e) = apps::setup(arg(2) == "alpine") {
-                eprintln!("apps-setup: {e}");
-                exit(1);
-            }
-        }
         _ => {
-            eprintln!("usage: wyse-init boot | run <service> | hostname | apps-setup [alpine]");
+            eprintln!("usage: wyse-init boot | run <service> | stop-apps | hostname");
             exit(1);
         }
     }

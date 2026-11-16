@@ -60,7 +60,10 @@ Partitions: p1 EFI/boot (64M at 1M), p2 read-only squashfs root (512M at
   own busybox (Alpine's); the system's `/bin/busybox` has only the commands
   the main system uses. The image's Alpine archive is trimmed and has the
   private root CA: see `external/board/wyse/alpine-root.sh`.
-- Apps run from `/data/services/<name>/run` under runsvdir (`sv` works).
+- Apps are OpenRC services in `/data/alpine`: wyse-init runs `openrc
+  sysinit/boot/default` in the chroot (no Alpine init, no PID namespace) and
+  `openrc shutdown` at shutdown (`wyse-init stop-apps`). Use
+  `alpine rc-status`, `alpine rc-service <name> restart`.
 - `/etc/wyse/vpn.conf` is locked: values come from `.env` at build time.
 
 # Build
@@ -92,6 +95,7 @@ Partitions: p1 EFI/boot (64M at 1M), p2 read-only squashfs root (512M at
   `ssh -i keys/wyse_ed25519 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null root@<ip>`.
   No scp on the device; copy with `ssh ... 'cat > file' < file`.
 - Deploy: `scripts/deploy.sh 3040` (keeps `/persist` and `/data`).
-- The image's busybox has no `tar -z`: use `gunzip -c f.tar.gz | tar -x`.
+- The image's busybox has no gzip or gunzip: unpack `.tar.gz` files with
+  `alpine tar -xzf - -C <dir> < f.tar.gz`.
 - Built-in sound: SOF driver, card `rt5672`, firmware from Alpine's
   `sof-firmware`. Inside `/data/alpine`, `alsactl` needs `/run/lock`.
