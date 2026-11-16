@@ -1,0 +1,18 @@
+# Wyse 3040 drivers in the image (besides the system's own, IMAGE_MODULES in
+# post-build.sh). wyse-init loads them at boot (/etc/wyse/modules), also
+# when the hardware is not plugged in yet, so it works when plugged in later.
+# Kernel settings: linux.fragment and linux-3040.fragment.
+
+# Intel GPU (VA-API H.264 encoder). User-space part: apk add libva
+# libva-intel-driver.
+i915
+# USB capture cards and webcams.
+uvcvideo
+# CH9329 keyboard/mouse adapter (CH340 USB serial).
+ch341
+# Built-in sound (RT5672 codec, SOF driver; firmware in firmware-3040).
+snd-soc-rt5670
+snd-soc-sst-cht-bsw-rt5672
+snd-sof-acpi-intel-byt
+# USB sound cards.
+snd-usb-audio

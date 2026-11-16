@@ -30,7 +30,9 @@ User's rules for the image:
 - Built in: Tailscale, NetBird, the private root CA, the SSH keys.
 - No monitor. The GPU is only for video encode/decode (VA-API). No FFmpeg.
 - Don't add software to the image without asking. Drivers or programs that
-  only some apps need go into `/data` (driver packs, Alpine packages).
+  only some apps need: drivers go into the model's list
+  (`external/board/wyse/modules-<model>`), programs into `/data` (Alpine
+  packages).
 
 # Layout
 
@@ -43,9 +45,8 @@ User's rules for the image:
   overlay), `package/netbird`.
 - `wyse-init/` Rust program (x86_64 musl) that does preinit, boot, services,
   vpn-guard, apps setup and DHCP lease handling. No boot shell scripts.
-- `drivers/` driver packs (see `drivers/README`).
 - `apps/<name>/install.sh` installs an app on a running device.
-- `build.sh` asks for the model and builds the image and its driver packs.
+- `build.sh` asks for the model and builds the image.
 - `scripts/deploy.sh <model> [ip]` puts a built image on a running device
   over SSH.
 
@@ -85,12 +86,12 @@ Partitions: p1 EFI/boot (64M at 1M), p2 read-only squashfs root (512M at
 - The build host is Alpine on arm64. Go is built from source and needs the
   host `go` to start. Host packages are in `.devcontainer/Dockerfile`; if the
   build fails on a missing host tool, add it there.
-- Kernel modules: only 8 stay in the image; the rest go to driver packs
-  (`drivers/build.sh <model> <pack>`, lists in `drivers/<model>/`). Packs only load into the exact kernel they
-  were built with, so rebuild them after any kernel change.
-
-# Test device
-
+- Kernel modules: only the system's 8 (IMAGE_MODULES in post-build.sh) and
+  the model's drivers (`board/wyse/modules-<model>`, with their
+  dependencies) stay in the image; wyse-init loads the model list at boot.
+  Only files matching `board/wyse/firmware-<model>` stay in /lib/firmware;
+  lines with a package name come from that Alpine package (SOF firmware
+  from `sof-firmware`). 5020 has no lists yet.
 - Wyse 3040 at `DEVICE_IP` in `.env`. SSH:
   `ssh -i keys/wyse_ed25519 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null root@<ip>`.
   No scp on the device; copy with `ssh ... 'cat > file' < file`.

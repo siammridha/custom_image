@@ -2,27 +2,21 @@
 # Install github.com/siammridha/simple_kvm on a Wyse running this image.
 # Run on the Wyse as root, after boot:
 #
-#   sh install.sh [driver-pack.tar.gz]
+#   sh install.sh
 #
 # Everything goes into /data, so it survives reboots and wyse-wipe-data
 # removes it. Same steps as the app's own deploy/install.sh, adapted:
 #   - packages go into the Alpine folder (/data/alpine)
-#   - the GPU, capture card and USB serial drivers are a driver pack made
-#     for this image's kernel (drivers/build.sh 3040 kvm), not part of the
-#     image
-#   - the OpenRC service runs in the Alpine subsystem, is restarted if it
-#     stops, and loads the drivers before it starts
+#   - the GPU, capture card and USB serial drivers are in the image
+#     (modules-3040) and load at boot
+#   - the OpenRC service runs in the Alpine subsystem and is restarted if
+#     it stops
 #   - it listens on port 3001 (audio-player has 3000)
 set -eu
 
 REPO=siammridha/simple_kvm
 PORT=3001
-KREL=$(uname -r)
 MODEL=$(cat /etc/wyse/model 2>/dev/null || true)
-PACK_NAME=wyse-drivers-$MODEL-kvm-$KREL.tar.gz
-PACK=${1:-}
-DRIVERS_URL=${DRIVERS_URL:-}   # optional: folder URL holding $PACK_NAME
-MODULES="i915 uvcvideo ch341"
 A=/data/alpine
 
 [ "$(id -u)" = 0 ] || { echo "Run this as root." >&2; exit 1; }
@@ -30,26 +24,9 @@ A=/data/alpine
 [ "$MODEL" = 3040 ] || { echo "Only the Wyse 3040 is supported (this is: ${MODEL:-unknown})." >&2; exit 1; }
 
 echo "Installing packages into $A..."
-alpine apk add --no-cache libva libva-intel-driver libva-utils libgcc kmod
+alpine apk add --no-cache libva libva-intel-driver libva-utils libgcc
 
-# A pack given on the command line is always installed (a new image build
-# needs the drivers from that same build). Otherwise only when missing.
-if [ -n "$PACK" ] || ! grep -qs '/i915.ko' "$A/lib/modules/$KREL/modules.dep"; then
-	echo "Installing the GPU, capture and serial drivers for kernel $KREL..."
-	if [ -z "$PACK" ] && [ -n "$DRIVERS_URL" ]; then
-		alpine wget -qO "/tmp/$PACK_NAME" "$DRIVERS_URL/$PACK_NAME"
-		PACK=$A/tmp/$PACK_NAME
-	fi
-	[ -n "$PACK" ] && [ -f "$PACK" ] || { echo "Need $PACK_NAME (argument or DRIVERS_URL)." >&2; exit 1; }
-	# The main system has no gunzip: Alpine's tar unpacks it.
-	alpine tar -xzf - -C / < "$PACK"
-	# Other apps' packs share this folder: index all of them together.
-	alpine depmod "$KREL"
-fi
-
-# Load the drivers now, to check the encoder below.
-printf %s "$A/lib/firmware" > /sys/module/firmware_class/parameters/path
-alpine modprobe -a $MODULES
+# The GPU driver loads at boot.
 i=0
 while [ $i -lt 10 ] && ! ls /dev/dri/renderD* >/dev/null 2>&1; do sleep 1; i=$((i + 1)); done
 ls /dev/dri/renderD* >/dev/null 2>&1 || { echo "No GPU render device (/dev/dri/renderD*), see dmesg." >&2; exit 1; }
@@ -86,12 +63,8 @@ depend() {
 	need net
 }
 
-# Drivers live in the Alpine folder, not in the image. Loaded at start so
-# the capture card and serial adapter work when plugged in later. The
-# kernel reads firmware by its path in the main system.
+# The drivers load at boot; wait for the GPU in case this runs early.
 start_pre() {
-	printf %s $A/lib/firmware > /sys/module/firmware_class/parameters/path
-	modprobe -a $MODULES
 	i=0
 	while [ \$i -lt 10 ] && ! ls /dev/dri/renderD* >/dev/null 2>&1; do
 		sleep 1; i=\$((i + 1))

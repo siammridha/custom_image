@@ -5,8 +5,7 @@ T=${1:?target dir missing}
 MODEL=${2:?model missing (build with: make MODEL=3040 or MODEL=5020)}
 B=$(dirname "$0")
 
-# Which model this image is for. Install scripts use it to pick the right
-# driver packs.
+# Which model this image is for (install scripts check it).
 mkdir -p "$T/etc/wyse"
 echo "$MODEL" > "$T/etc/wyse/model"
 
@@ -65,20 +64,82 @@ ln -snf /persist/netbird/state "$T/var/lib/netbird"
 ln -snf /persist/netbird/etc   "$T/etc/netbird"
 ln -snf /persist/dropbear      "$T/etc/dropbear"
 
-# Driver packs (drivers/README): the kernel also builds the pack drivers,
-# so the parts they need are inside the kernel. Only these modules stay in
-# the image; the rest are set aside for drivers/build.sh.
-IMAGE_MODULES="efivarfs.ko nf_log_syslog.ko softdog.ko x86_pkg_temp_thermal.ko
-	xt_LOG.ko xt_MASQUERADE.ko xt_addrtype.ko xt_mark.ko"
+# Kernel modules: the system's own (IMAGE_MODULES) and the model's drivers
+# (modules-<model>), each with every module it needs. The kernel builds
+# more drivers than that for both models; the rest are removed. wyse-init
+# loads the model's drivers at boot (/etc/wyse/modules).
+IMAGE_MODULES="efivarfs nf_log_syslog softdog x86_pkg_temp_thermal
+	xt_LOG xt_MASQUERADE xt_addrtype xt_mark"
+ML=$B/modules-$MODEL
 KREL=$(ls "$T/lib/modules")
-POOL=$BUILD_DIR/wyse-driver-pool
-rm -rf "$POOL" && mkdir -p "$POOL/lib/modules"
-cp -a "$T/lib/modules/$KREL" "$POOL/lib/modules/"
-find "$T/lib/modules/$KREL" -name '*.ko*' | while read -r f; do
-	echo " $IMAGE_MODULES " | tr '\n\t' '  ' | grep -qF " ${f##*/} " || rm -f "$f"
-done
-find "$T/lib/modules/$KREL" -type d -empty -delete
+M=$T/lib/modules/$KREL
 "$HOST_DIR/sbin/depmod" -b "$T" "$KREL"
+{ echo "$IMAGE_MODULES"; [ ! -f "$ML" ] || grep -v '^#' "$ML"; } |
+	tr -s ' \t' '\n\n' | grep . | tr - _ > "$BUILD_DIR/wyse-modules.want"
+# modules.dep: "<module>: <every module it needs>". "-" and "_" are the same.
+awk -F': *' 'NR == FNR { want[$1] = 1; next }
+	{ b = $1; sub(/.*\//, "", b); sub(/\.ko.*/, "", b); gsub(/-/, "_", b)
+	  if (b in want) { found[b] = 1; print $1; n = split($2, d, " ")
+	                   for (i = 1; i <= n; i++) print d[i] } }
+	END { for (w in want) if (!(w in found)) { print "module not built: " w; bad = 1 }
+	      exit bad }' "$BUILD_DIR/wyse-modules.want" "$M/modules.dep" > "$BUILD_DIR/wyse-modules" ||
+	{ grep 'not built' "$BUILD_DIR/wyse-modules"; exit 1; }
+find "$M" -name '*.ko*' | while read -r f; do
+	grep -qxF "${f#"$M"/}" "$BUILD_DIR/wyse-modules" || rm -f "$f"
+done
+find "$M" -type d -empty -delete
+"$HOST_DIR/sbin/depmod" -b "$T" "$KREL"
+if [ -f "$ML" ]; then
+	grep -v '^#' "$ML" | grep . > "$T/etc/wyse/modules"
+else
+	rm -f "$T/etc/wyse/modules"
+fi
+
+# Firmware: with a list for the model (firmware-<model>), only the files on
+# it stay in /lib/firmware. Files from an Alpine package come from the same
+# Alpine branch as the Alpine archive; apk checks the packages' signatures
+# against Alpine's keys. Kept in the download folder for offline builds.
+FL=$B/firmware-$MODEL
+if [ -f "$FL" ]; then
+	F=$BUILD_DIR/wyse-firmware
+	rm -rf "$F" && mkdir -p "$F/keys" "$F/pkg"
+	gunzip -c "$AD/$AF" | tar -xf - -C "$F/keys" ./etc/apk/keys
+	AV=$(echo "$AF" | sed 's/^alpine-minirootfs-\([0-9]*\.[0-9]*\).*/\1/')
+	P=$AD/firmware-v$AV
+	mkdir -p "$P"
+	PKGS=$(awk '!/^#/ && NF > 1 { print $2 }' "$FL" | sort -u)
+	if [ -n "$PKGS" ]; then
+		apk fetch --arch x86_64 --repositories-file /dev/null \
+			--keys-dir "$F/keys/etc/apk/keys" --no-cache --quiet -o "$P" \
+			-X "http://dl-cdn.alpinelinux.org/alpine/v$AV/main" \
+			-X "http://dl-cdn.alpinelinux.org/alpine/v$AV/community" $PKGS ||
+			echo "firmware: can't download $PKGS, using $P"
+		for p in $PKGS; do
+			a=$(ls "$P/$p"-[0-9]*.apk 2>/dev/null | sort -V | tail -1)
+			[ -n "$a" ] || { echo "firmware: no $p package in $P" >&2; exit 1; }
+			apk verify --keys-dir "$F/keys/etc/apk/keys" --quiet "$a"
+			tar -xzf "$a" -C "$F/pkg" lib/firmware 2>/dev/null
+		done
+	fi
+	awk '!/^#/ && NF > 1 { print $1 }' "$FL" | while read -r f; do
+		[ -f "$F/pkg/lib/firmware/$f" ] || { echo "firmware: $f not found" >&2; exit 1; }
+		mkdir -p "$T/lib/firmware/$(dirname "$f")"
+		cp "$F/pkg/lib/firmware/$f" "$T/lib/firmware/$f"
+	done
+	PATS=$(awk '!/^#/ && NF { print $1 }' "$FL")
+	set -f   # the patterns are matched with case, not against files here
+	find "$T/lib/firmware" ! -type d | while read -r f; do
+		r=${f#"$T"/lib/firmware/}
+		keep=
+		for p in $PATS; do
+			# shellcheck disable=SC2254
+			case $r in $p) keep=1; break ;; esac
+		done
+		[ -n "$keep" ] || rm -f "$f"
+	done
+	set +f
+	find "$T/lib/firmware" -type d -empty -delete
+fi
 
 # Only the programs the system uses. Debug tools are installed when needed
 # into /data/alpine (alpine apk add ...) and removed after.

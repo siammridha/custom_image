@@ -15,11 +15,12 @@ fetches it). Open the folder in its dev container (`.devcontainer/`), then:
     ./build.sh                  # asks: 3040 or 5020
 
 The first build of a model takes about an hour; later builds only redo what
-changed. `./build.sh 3040` skips the question. It also builds that model's
-driver packs. The full log is in `build.log`.
+changed. `./build.sh 3040` skips the question. The full log is in `build.log`.
 
 The image is `/home/vscode/wyse-build/output-<model>/images/disk.img`.
-Each model has its own image: the kernel drivers differ.
+Each model has its own image: the kernel drivers differ. The drivers a
+model uses are in the image (`external/board/wyse/modules-<model>`) and
+load at boot; only the firmware files on `firmware-<model>` are kept.
 
 Your VPN keys and SSH key are baked into the image. Keep built images
 private.
@@ -53,11 +54,8 @@ keeps the main system small and unchanged.
 
 Apps are installed after boot into `/data` and run in the Alpine subsystem:
 
-- `apps/audio-player/install.sh` - audio player on port 3000 (needs the
-  `sound` driver pack).
-- `apps/simple-kvm/install.sh` - KVM over the web on port 3001 (needs the
-  `kvm` driver pack).
+- `apps/audio-player/install.sh` - audio player on port 3000.
+- `apps/simple-kvm/install.sh` - KVM over the web on port 3001.
 
-Copy the script and the driver pack to the device and run
-`sh install.sh wyse-drivers-3040-<pack>-<kernel>.tar.gz`. Drivers that only some apps need are shipped
-as driver packs: see `drivers/README`.
+Copy the script to the device and run `sh install.sh`. Both need a Wyse
+3040: its sound and GPU drivers are in the image.

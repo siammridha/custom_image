@@ -1,6 +1,0 @@
-# Pack "sound": Wyse 3040 built-in sound (RT5672 codec, SOF driver) and
-# USB sound cards. Firmware: apk add sof-firmware.
-snd-soc-rt5670
-snd-soc-sst-cht-bsw-rt5672
-snd-sof-acpi-intel-byt
-snd-usb-audio

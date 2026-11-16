@@ -1,0 +1,10 @@
+# Wyse 3040: the only files kept in /lib/firmware. Shell patterns work.
+# A line with a second word comes from that Alpine package (fetched by
+# post-build.sh); the others come from Buildroot's linux-firmware.
+
+# Network: built-in RTL8168h (r8169). USB network adapters (r8152).
+rtl_nic/rtl8168h-2.fw
+rtl_nic/rtl815*
+# Built-in sound (SOF): DSP firmware and the topology for the RT5672 card.
+intel/sof/sof-cht.ri			sof-firmware
+intel/sof-tplg/sof-cht-rt5670.tplg	sof-firmware

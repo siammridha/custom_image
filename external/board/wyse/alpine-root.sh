@@ -53,10 +53,11 @@ sed -i -e '/^libcap2></d' -e '/^openrc-user></d' -e 's/^openrc><.*/openrc/' \
 
 # Packages apk does not need (a package that needs one pulls it back in):
 #   musl-utils, scanelf: getconf getent iconv ldd ldconfig scanelf
-#   alpine-release: /etc/alpine-release, /etc/os-release, /etc/issue
+# alpine-release stays: install scripts read /etc/alpine-release and
+# /etc/os-release (for example to build the repository URL).
 apk --root "$R" --arch x86_64 --repositories-file /dev/null --no-network \
 	--no-scripts --no-cache --logfile=no --quiet \
-	del musl-utils alpine-release
+	del musl-utils
 
 # Files apk, OpenRC and the apps don't use, from packages that stay. apk
 # reads keys only from /etc/apk/keys (libapk: etc/apk/keys, lib/apk/keys);

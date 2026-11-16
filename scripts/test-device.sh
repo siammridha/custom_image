@@ -5,7 +5,7 @@
 #
 # Only for a test device: it replaces /data/alpine with a fresh one (the old
 # one is deleted at the end), removes all apps and installs both apps in
-# apps/ again with the driver packs from drivers/out (build them first).
+# apps/ again.
 # The apps need a Wyse 3040.
 cd "$(dirname "$0")/.." || exit 1
 get() { sed -n "s/^$1=//p" .env 2>/dev/null | head -n 1 | tr -d '"\r'; }
@@ -16,7 +16,6 @@ IP=${2:-$(get DEVICE_IP)}
 KEY=$(get SSH_KEY_FILE); KEY=${KEY:-keys/wyse_ed25519}
 HOST=$(get HOST_DOMAIN)
 O=${WYSE_OUT:-/home/vscode/wyse-build/output-$MODEL}
-KREL=$(ls "$O/target/lib/modules" 2>/dev/null | head -n 1)
 K="-i $KEY -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -o ConnectTimeout=5"
 D=root@$IP
 S="ssh -n $K $D"
@@ -41,13 +40,13 @@ alpine apk add --no-cache htop >/dev/null && alpine htop --version | head -1 && 
 cat /data/alpine/etc/apk/world; alpine cat /proc/self/cgroup
 echo "--- main system processes seen from alpine"; alpine ps | grep -cE "netbird|tailscaled|dropbear"'
 
-for p in kvm:simple-kvm sound:audio-player; do
-	pk=${p%%:*} a=${p#*:}
-	f=drivers/out/wyse-drivers-$MODEL-$pk-$KREL.tar.gz
+echo "#### drivers and firmware in the image"
+$S 'echo $(cat /etc/wyse/modules); for m in i915 uvcvideo ch341 snd_sof_acpi_intel_byt snd_soc_sst_cht_bsw_rt5672 snd_usb_audio; do [ -d /sys/module/$m ] || echo "$m NOT LOADED"; done
+ls /dev/dri; grep rt5672 /proc/asound/cards || echo "NO SOUND CARD"; alpine find /lib/firmware ! -type d 2>/dev/null | wc -l; ls /lib/firmware/intel/sof /lib/firmware/intel/sof-tplg'
+
+for a in simple-kvm audio-player; do
 	echo "#### $a"
-	[ -f "$f" ] || { echo "missing $f (drivers/build.sh $MODEL $pk)"; continue; }
-	ssh $K $D "cat > /tmp/${f##*/}" < "$f"
-	ssh $K $D "sh -s /tmp/${f##*/}" < apps/$a/install.sh 2>&1 | grep -v "^ *$" | sed -n '$p;/rror\|not found\|arning\|\*/p'
+	ssh $K $D "sh -s" < apps/$a/install.sh 2>&1 | grep -v "^ *$" | sed -n '$p;/rror\|not found\|arning\|\*/p'
 done
 
 echo "#### after install"

@@ -27,8 +27,8 @@ CONFIG_USB_OHCI_HCD=y
 CONFIG_USB_STORAGE=y
 CONFIG_USB_UAS=y
 
-# No GPU drivers in the image (3040: i915 is in the "kvm" driver pack). Screen
-# console uses the firmware framebuffer (VGA text in BIOS mode, simpledrm
+# GPU drivers only for the model that uses one (3040: i915, in
+# linux-3040.fragment and modules-3040). Screen console uses the firmware framebuffer (VGA text in BIOS mode, simpledrm
 # in UEFI mode).
 CONFIG_DRM=y
 # CONFIG_DRM_AMDGPU is not set
@@ -77,18 +77,16 @@ CONFIG_SOFT_WATCHDOG=m
 # Apps share one cgroup with a RAM limit (see /usr/libexec/wyse/apps-setup).
 CONFIG_MEMCG=y
 
-# Driver packs (see drivers/README). These drivers are built as modules
-# with the kernel, then removed from the image by post-build.sh and
-# shipped as packs that apps install into /data. Building them here keeps
-# the small shared parts they need inside the kernel, so the packs always
-# load into this exact kernel. Model-only pack drivers (built-in sound,
-# GPU) are in linux-<model>.fragment.
+# Drivers for apps, built as modules for both models. post-build.sh keeps
+# only the ones on the model's list (board/wyse/modules-<model>) in the
+# image. Model-only drivers (built-in sound, GPU) are in
+# linux-<model>.fragment.
 
-# USB sound cards (pack "sound").
+# USB sound cards.
 CONFIG_SND_USB_AUDIO=m
 
 # USB capture cards (uvcvideo) and the CH9329 keyboard/mouse adapter (CH340
-# serial) (pack "kvm").
+# serial).
 CONFIG_MEDIA_SUPPORT=m
 CONFIG_MEDIA_SUPPORT_FILTER=y
 CONFIG_MEDIA_USB_SUPPORT=y

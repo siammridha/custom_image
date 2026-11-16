@@ -32,11 +32,15 @@ fn persist_dirs() {
     mkdir_mode("/persist/dropbear", 0o700);
 }
 
-/// Load the kernel modules for the hardware found at boot (GPU etc.):
-/// every `modalias` under /sys/devices goes to one `modprobe -a`.
+/// Load the kernel modules for the hardware found at boot: every `modalias`
+/// under /sys/devices, and the model's drivers (/etc/wyse/modules, also for
+/// hardware plugged in later), in one `modprobe -a`.
 fn coldplug() {
     let mut aliases = BTreeSet::new();
     find_modalias(Path::new("/sys/devices"), &mut aliases);
+    if let Ok(s) = fs::read_to_string("/etc/wyse/modules") {
+        aliases.extend(s.split_whitespace().map(String::from));
+    }
     if aliases.is_empty() {
         return;
     }

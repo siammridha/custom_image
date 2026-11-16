@@ -1,6 +1,5 @@
 #!/bin/sh
-# Build the image. Asks which Wyse model it is for, builds it, then builds
-# that model's driver packs.
+# Build the image. Asks which Wyse model it is for, then builds it.
 #
 #   ./build.sh            asks for the model
 #   ./build.sh 3040       no question
@@ -44,16 +43,7 @@ if ! wait $BUILD; then
 	exit 1
 fi
 
-# Driver packs for this model (drivers/<model>/<pack>.modules).
-for f in drivers/$MODEL/*.modules; do
-	[ -f "$f" ] || continue
-	p=${f##*/}; p=${p%.modules}
-	drivers/build.sh "$MODEL" "$p" >> build.log 2>&1 ||
-		{ echo "Driver pack \"$p\" failed. See build.log." >&2; exit 1; }
-done
-
 O=/home/vscode/wyse-build/output-$MODEL/images
 echo "Done in $(( ($(date +%s) - start) / 60 )) min."
 echo "  Full disk image:  $O/disk.img"
-echo "  Driver packs:     drivers/out/wyse-drivers-$MODEL-*"
 echo "  Install on a running device:  scripts/deploy.sh $MODEL [device-ip]"

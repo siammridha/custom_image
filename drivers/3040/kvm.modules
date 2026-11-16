@@ -1,5 +1,0 @@
-# Pack "kvm": Intel GPU (VA-API H.264 encoder), USB capture cards, CH9329
-# keyboard/mouse adapter (CH340 serial). VA-API: apk add libva libva-intel-driver.
-i915
-uvcvideo
-ch341

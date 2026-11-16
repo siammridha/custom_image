@@ -25,7 +25,8 @@ CONFIG_LPC_ICH=y
 CONFIG_ITCO_WDT=y
 CONFIG_ITCO_VENDOR_SUPPORT=y
 
-# Pack "sound": built-in sound (Cherry Trail + RT5672 codec, SOF driver).
+# Built-in sound (Cherry Trail + RT5672 codec, SOF driver). Modules,
+# kept in the image by modules-3040; firmware in firmware-3040.
 CONFIG_SND_SOC=m
 CONFIG_SND_SOC_SOF_TOPLEVEL=y
 CONFIG_SND_SOC_SOF_ACPI=m
@@ -37,6 +38,6 @@ CONFIG_SND_SOC_INTEL_CHT_BSW_RT5672_MACH=m
 # CONFIG_SND_SST_ATOM_HIFI2_PLATFORM_ACPI is not set
 # CONFIG_SND_SST_ATOM_HIFI2_PLATFORM is not set
 
-# Pack "kvm": GPU (Intel i915, for the VA-API H.264 encoder).
+# GPU (Intel i915, for the VA-API H.264 encoder), in modules-3040.
 CONFIG_DRM_I915=m
 # CONFIG_DRM_I915_CAPTURE_ERROR is not set

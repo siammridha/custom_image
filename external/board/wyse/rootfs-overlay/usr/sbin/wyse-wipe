@@ -1,4 +1,0 @@
-#!/bin/sh
-# The overlay (all runtime changes) is wiped on every boot, so a reboot is
-# all that is needed. /persist and the built-in image are not touched.
-sync && reboot
