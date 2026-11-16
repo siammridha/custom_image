@@ -81,8 +81,11 @@ Partitions: p1 EFI/boot (64M at 1M), p2 read-only squashfs root (512M at
   Mac file sharing corrupted a download once.
 - Go modules for Tailscale and NetBird come from the Go module proxy
   (`external/external.mk`); Buildroot's default clones each module's git
-  repo and got stuck on aws-sdk-go-v2. Tailscale is built with
-  `ts_omit_aws` (no AWS state store).
+  repo and got stuck on aws-sdk-go-v2. Tailscale is built with only the
+  features used (`TAILSCALE_TAGS` in `external/external.mk`); only
+  `--netfilter-mode=off` works. NetBird is built without inlining.
+- `docs/paths.md`: paths the programs know about that are not in the image,
+  what was removed and how to bring it back. Check it when a file is missing.
 - The build host is Alpine on arm64. Go is built from source and needs the
   host `go` to start. Host packages are in `.devcontainer/Dockerfile`; if the
   build fails on a missing host tool, add it there.

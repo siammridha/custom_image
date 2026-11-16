@@ -11,8 +11,11 @@ NETBIRD_LICENSE_FILES = LICENSE
 NETBIRD_GOMOD = github.com/netbirdio/netbird
 NETBIRD_BUILD_TARGETS = client
 NETBIRD_BIN_NAME = netbird
-# Same build as upstream's release (.goreleaser.yaml, id "netbird").
-NETBIRD_TAGS = load_wgnt_from_rsrc
+# Upstream's release (.goreleaser.yaml) also sets the tag load_wgnt_from_rsrc,
+# which only matters on Windows. No inlining (-l): 4.2 MB smaller. NetBird
+# is slower only where it moves traffic itself (relay); direct connections
+# use the kernel's WireGuard.
+NETBIRD_BUILD_OPTS = -gcflags=all=-l
 NETBIRD_LDFLAGS = -X github.com/netbirdio/netbird/version.version=$(NETBIRD_VERSION)
 NETBIRD_GO_ENV = CGO_ENABLED=0
 

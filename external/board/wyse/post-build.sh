@@ -209,7 +209,9 @@ sed -i -e 's|^tmpfs\t\t/tmp\t\ttmpfs\tmode=1777\t|tmpfs\t\t/tmp\t\ttmpfs\tmode=1
 # apps cgroup. The main /proc: ps and top in Alpine see every process.
 # Alpine's /run is mounted by wyse-init each time Alpine starts
 # (wyse-init/src/alpine.rs).
-sed -i -e '\|^cgroup2\t|d' -e '\|/data/alpine/|d' "$T/etc/fstab"
+# The skeleton's "/dev/root / ext2" line is wrong here (root is the overlay
+# set up by preinit) and nothing uses it.
+sed -i -e '\|^/dev/root\t|d' -e '\|^cgroup2\t|d' -e '\|/data/alpine/|d' "$T/etc/fstab"
 cat >> "$T/etc/fstab" <<'FSTAB'
 cgroup2		/sys/fs/cgroup	cgroup2	nofail	0	0
 /proc		/data/alpine/proc	none	bind,nofail	0	0
@@ -218,8 +220,19 @@ cgroup2		/sys/fs/cgroup	cgroup2	nofail	0	0
 /tmp		/data/alpine/tmp	none	bind,nofail	0	0
 FSTAB
 
-# No password login for root (SSH key only).
+# Only root: every program runs as root. No password login for root (SSH
+# key only). The one group used: tty (devpts gid=5 in fstab; dropbear makes
+# SSH terminals 0620 with it).
+sed -i '/^root:/!d' "$T/etc/passwd" "$T/etc/shadow"
 sed -i 's/^root:[^:]*:/root:*:/' "$T/etc/shadow"
+echo 'tty:x:5:' > "$T/etc/group"
+
+# Files nothing reads (see docs/paths.md): Go has the port and protocol
+# names it needs built in; nothing uses /var/lock. /dev is covered by
+# devtmpfs at boot (inittab makes the /dev links), so the image's /dev
+# stays empty.
+rm -f "$T/etc/services" "$T/etc/protocols" "$T/var/lock"
+find "$T/dev" -mindepth 1 -delete
 
 # SSH keys allowed to log in as root, and /etc/hosts. Both are fixed in
 # the image (rebuilt from scratch on every build).

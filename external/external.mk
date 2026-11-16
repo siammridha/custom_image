@@ -7,5 +7,82 @@ GO_MODULE_PROXY = GOPROXY=https://proxy.golang.org,direct
 TAILSCALE_GO_ENV += $(GO_MODULE_PROXY)
 NETBIRD_GO_ENV += $(GO_MODULE_PROXY)
 
-# Leave out Tailscale's AWS state store (we keep state in /persist).
-TAILSCALE_TAGS += ts_omit_aws
+# Tailscale: only the parts used here (Tailscale's own feature tags). Kept:
+# cli (vpn-guard runs "tailscale"), ssh (TS_UP_ARGS --ssh; needs netstack,
+# c2n, dbus), osrouter and dns (address, routes, DNS), ipnbus ("up" waits),
+# health, portmapper and listenrawdisco (direct connections), cachenetmap
+# (start without the control server), bakedroots (backup TLS roots),
+# unixsocketidentity (without it the CLI gets "access denied": a Tailscale bug).
+# Made with, in Tailscale's source:
+#   go run ./cmd/featuretags --min --add=cli,ssh,osrouter,dns,ipnbus,health,portmapper,listenrawdisco,cachenetmap,bakedroots,unixsocketidentity
+# (ts_include_cli is already in tailscale.mk). A feature added in a later
+# Tailscale version stays in until it is added here.
+TAILSCALE_TAGS += \
+	ts_omit_ace \
+	ts_omit_acme \
+	ts_omit_advertiseexitnode \
+	ts_omit_advertiseroutes \
+	ts_omit_appconnectors \
+	ts_omit_aws \
+	ts_omit_bird \
+	ts_omit_captiveportal \
+	ts_omit_capture \
+	ts_omit_cliconndiag \
+	ts_omit_clientmetrics \
+	ts_omit_clientupdate \
+	ts_omit_cloud \
+	ts_omit_colorable \
+	ts_omit_completion \
+	ts_omit_completion_scripts \
+	ts_omit_conn25 \
+	ts_omit_debug \
+	ts_omit_debugeventbus \
+	ts_omit_debugportmapper \
+	ts_omit_desktop_sessions \
+	ts_omit_doctor \
+	ts_omit_drive \
+	ts_omit_flashappliance \
+	ts_omit_gro \
+	ts_omit_hujsonconf \
+	ts_omit_identityfederation \
+	ts_omit_iptables \
+	ts_omit_kube \
+	ts_omit_linkspeed \
+	ts_omit_linuxdnsfight \
+	ts_omit_logtail \
+	ts_omit_netlog \
+	ts_omit_networkmanager \
+	ts_omit_oauthkey \
+	ts_omit_outboundproxy \
+	ts_omit_peerapiclient \
+	ts_omit_peerapiserver \
+	ts_omit_portlist \
+	ts_omit_posture \
+	ts_omit_qrcodes \
+	ts_omit_relayserver \
+	ts_omit_remoteconfig \
+	ts_omit_resolved \
+	ts_omit_routecheck \
+	ts_omit_runtimemetrics \
+	ts_omit_sdnotify \
+	ts_omit_serve \
+	ts_omit_serviceclientprefs \
+	ts_omit_synology \
+	ts_omit_syslog \
+	ts_omit_syspolicy \
+	ts_omit_systray \
+	ts_omit_taildrop \
+	ts_omit_tailnetlock \
+	ts_omit_tap \
+	ts_omit_tpm \
+	ts_omit_tundevstats \
+	ts_omit_useexitnode \
+	ts_omit_useproxy \
+	ts_omit_usermetrics \
+	ts_omit_useroutes \
+	ts_omit_wakeonlan \
+	ts_omit_webbrowser \
+	ts_omit_webclient
+
+# Dropbear: no login records. musl's utmp/wtmp functions do nothing.
+DROPBEAR_CONF_OPTS += --disable-utmp --disable-pututline --disable-pututxline
