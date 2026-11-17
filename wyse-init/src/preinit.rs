@@ -18,12 +18,19 @@ use std::os::unix::process::CommandExt;
 use std::path::Path;
 use std::process::Command;
 
-/// What may stay on /persist: VPN identity (tailscale, netbird), SSH host
-/// keys (dropbear), the settings written by setup-os (wyse.conf) and the
-/// wipe-data request.
+/// What may stay on /persist; everything else is removed at every boot.
+/// Kept: the NetBird and Tailscale keys (same VPN IPs), what lets Tailscale
+/// start while its server is unreachable (relay list, device list of each
+/// login in tailscaled.state), the SSH host keys, the settings written by
+/// setup-os, the wipe-data request (read later in this boot) and lost+found
+/// (e2fsck would make it again). The programs make the rest again when they
+/// start.
 const KEEP: &[&str] = &[
-    "tailscale",
-    "netbird",
+    "netbird/state/default.json",
+    "tailscale/tailscaled.state",
+    "tailscale/derpmap.cached.json",
+    "tailscale/profile-data", // only the logins tailscaled.state lists
+    "tailscale/ssh",
     "dropbear",
     "wyse.conf",
     ".wipe-data",
@@ -32,6 +39,38 @@ const KEEP: &[&str] = &[
 
 fn log(m: &str) {
     sys::kmsg(&format!("preinit: {m}"));
+}
+
+/// Remove what KEEP does not list. `rel` is `dir` relative to /persist.
+fn clean_persist(dir: &Path, rel: &str) {
+    let Ok(rd) = fs::read_dir(dir) else { return };
+    for e in rd.flatten() {
+        let name = e.file_name().to_string_lossy().into_owned();
+        let r = if rel.is_empty() { name.clone() } else { format!("{rel}/{name}") };
+        let p = e.path();
+        let is_dir = fs::symlink_metadata(&p).map(|m| m.is_dir()).unwrap_or(false);
+        if rel == "tailscale/profile-data" {
+            // One folder for each login; tailscaled.state names them
+            // "profile-<folder>". Unreadable state: keep them all.
+            let state = fs::read_to_string("/persist/tailscale/tailscaled.state");
+            if state.map_or(true, |s| s.contains(&format!("\"profile-{name}\""))) {
+                continue;
+            }
+        } else if r == "tailscale/profile-data" {
+            clean_persist(&p, &r);
+            continue;
+        } else if KEEP.contains(&r.as_str()) {
+            continue;
+        } else if is_dir && KEEP.iter().any(|k| k.starts_with(&format!("{r}/"))) {
+            clean_persist(&p, &r);
+            continue;
+        }
+        log(&format!("removing /persist/{r}"));
+        let res = if is_dir { fs::remove_dir_all(&p) } else { fs::remove_file(&p) };
+        if let Err(err) = res {
+            log(&format!("cannot remove /persist/{r}: {err}"));
+        }
+    }
 }
 
 fn fail(m: &str) -> ! {
@@ -137,23 +176,7 @@ fn run() -> Result<Infallible, String> {
         .map_err(|e| format!("mount persist: {e}"))?;
 
     // Remove anything else that built up on persist.
-    if let Ok(rd) = fs::read_dir("/persist") {
-        for e in rd.flatten() {
-            let name = e.file_name().to_string_lossy().into_owned();
-            if KEEP.contains(&name.as_str()) {
-                continue;
-            }
-            log(&format!("removing /persist/{name}"));
-            let p = e.path();
-            let r = match fs::symlink_metadata(&p) {
-                Ok(m) if m.is_dir() => fs::remove_dir_all(&p),
-                _ => fs::remove_file(&p),
-            };
-            if let Err(err) = r {
-                log(&format!("cannot remove /persist/{name}: {err}"));
-            }
-        }
-    }
+    clean_persist(Path::new("/persist"), "");
     sys::sync();
 
     // Data partition. Formatted when wyse-wipe-data asked for it, or when it
