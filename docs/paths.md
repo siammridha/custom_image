@@ -5,8 +5,8 @@ Many of these files are not in the image. This list says, for each one,
 whether that is on purpose, what was removed and how to bring it back.
 Check here first when a program fails because a file is missing.
 
-Checked on 2026-11-16 (Buildroot 2026.02.3, busybox 1.37.0, dropbear
-2026.91, musl 1.2.6, e2fsprogs 1.47.3, util-linux 2.41.4, Tailscale 1.102.5,
+Checked on 2026-11-17 (Buildroot 2026.08.2, busybox 1.38.0, dropbear
+2026.94, musl 1.2.6, e2fsprogs 1.47.4, util-linux 2.41.5, Tailscale 1.104.7,
 NetBird 0.83.1).
 
 ## Removed on purpose

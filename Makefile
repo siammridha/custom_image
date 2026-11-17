@@ -34,7 +34,7 @@ model_defconfig = mkdir -p $(OUT) && \
 
 .PHONY: $(GOALS)
 $(firstword $(GOALS)):
-	@# buildroot/ is a git submodule (Buildroot 2026.02.3, unchanged). Our
+	@# buildroot/ is a git submodule (Buildroot 2026.08.2, unchanged). Our
 	@# edits to it are in patches/buildroot-wyse.patch, applied once here.
 	@test -f $(BR)/Makefile || git -C $(CURDIR) submodule update --init buildroot
 	@git -C $(BR) apply --reverse --check $(PATCH) 2>/dev/null || \

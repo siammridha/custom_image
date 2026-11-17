@@ -1,5 +1,5 @@
 diff --git a/package/fakeroot/fakeroot.mk b/package/fakeroot/fakeroot.mk
-index ea0edb76..601e7a3f 100644
+index 12d7f1c4..0b23d672 100644
 --- a/package/fakeroot/fakeroot.mk
 +++ b/package/fakeroot/fakeroot.mk
 @@ -15,6 +15,12 @@ HOST_FAKEROOT_DEPENDENCIES = host-acl
@@ -16,27 +16,18 @@ index ea0edb76..601e7a3f 100644
  FAKEROOT_LICENSE_FILES = COPYING
  
 diff --git a/package/go/Config.in.host b/package/go/Config.in.host
-index 79950983..4f6720b6 100644
+index 47c7e5d0..e524a86f 100644
 --- a/package/go/Config.in.host
 +++ b/package/go/Config.in.host
 @@ -2,7 +2,7 @@
- config BR2_PACKAGE_HOST_GO_TARGET_ARCH_SUPPORTS
- 	bool
- 	default y
--	depends on BR2_PACKAGE_HOST_GO_BOOTSTRAP_STAGE5_ARCH_SUPPORTS || BR2_PACKAGE_HOST_GO_BIN_HOST_ARCH_SUPPORTS
-+	depends on BR2_PACKAGE_HOST_GO_BOOTSTRAP_STAGE5_ARCH_SUPPORTS || BR2_HOSTARCH = "aarch64" || BR2_PACKAGE_HOST_GO_BIN_HOST_ARCH_SUPPORTS
- 	# See https://go.dev/doc/install/source#environment
- 	# See src/go/build/syslist.go for the list of supported architectures
- 	depends on (BR2_arm && BR2_TOOLCHAIN_SUPPORTS_PIE) || BR2_aarch64 \
-@@ -34,7 +34,7 @@ config BR2_PACKAGE_HOST_GO_TARGET_CGO_LINKING_SUPPORTS
  config BR2_PACKAGE_HOST_GO_HOST_ARCH_SUPPORTS
  	bool
  	default y
 -	depends on BR2_PACKAGE_HOST_GO_BOOTSTRAP_STAGE5_ARCH_SUPPORTS || BR2_PACKAGE_HOST_GO_BIN_HOST_ARCH_SUPPORTS
 +	depends on BR2_PACKAGE_HOST_GO_BOOTSTRAP_STAGE5_ARCH_SUPPORTS || BR2_HOSTARCH = "aarch64" || BR2_PACKAGE_HOST_GO_BIN_HOST_ARCH_SUPPORTS
  
- # CGO linking for the host. Since we use the same compiler for target
- # and host, if the target can't do CGO linking, then the host can't.
+ # Target go packages should depend on BR2_PACKAGE_HOST_GO_TARGET_ARCH_SUPPORTS
+ config BR2_PACKAGE_HOST_GO_TARGET_ARCH_SUPPORTS
 @@ -57,7 +57,7 @@ if BR2_PACKAGE_HOST_GO
  
  choice
@@ -88,52 +79,55 @@ index 7bdde1a8..561ef7c0 100644
  	GOROOT="$(@D)" \
  	GOBIN="$(@D)/bin" \
 diff --git a/package/go/go.hash b/package/go/go.hash
-index 69f2a313..5e77bf0d 100644
+index 828f8093..7d4e6f04 100644
 --- a/package/go/go.hash
 +++ b/package/go/go.hash
 @@ -1,5 +1,5 @@
  # sha256 checksum from https://go.dev/dl/
--sha256  1c646875d0aa8799133184ed57cf79ff24bdefe8c8820470602a9d3d6d9192b8  go1.26.3.src.tar.gz
-+sha256  d44101b0ff27ed2a4c75ad46c17b9c74359209e2eb2ca7c9df6cb4fdb68e1969  go1.26.11.src.tar.gz
- sha256  0ef3626a149b5811c813838c62b7d6618d03ea36047b32c90b0e4851cc42b1fa  go1.26.3.linux-386.tar.gz
- sha256  2b2cfc7148493da5e73981bffbf3353af381d5f93e789c82c79aff64962eb556  go1.26.3.linux-amd64.tar.gz
- sha256  9d89a3ea57d141c2b22d70083f2c8459ba3890f2d9e818e7e933b75614936565  go1.26.3.linux-arm64.tar.gz
+-sha256  6e7749035cf360f06b2575d162ea79df9fda8ef671889e5c375f8e50777f26bb  go1.27.3.src.tar.gz
++sha256  73cfb8571aec0c01177687db87163d46aa20e9779672772891aa17654d9a6099  go1.27.4.src.tar.gz
+ sha256  cfc243057c03dd131413b91269d16b5061f87f312059c1ed78681cbb95d6afbf  go1.27.3.linux-386.tar.gz
+ sha256  65efbc80fdc1fa2cd2631cad5b481777a68e8725f34e89f50fc6ac714e379b40  go1.27.3.linux-amd64.tar.gz
+ sha256  a06e99309dbcbdca1a8ccd2282c3ee146e55930886e26b4f1193269587165f49  go1.27.3.linux-arm64.tar.gz
 diff --git a/package/go/go.mk b/package/go/go.mk
-index ebd0d418..1caf4539 100644
+index 88b4163c..b7e61f9e 100644
 --- a/package/go/go.mk
 +++ b/package/go/go.mk
 @@ -4,7 +4,7 @@
  #
  ################################################################################
  
--GO_VERSION = 1.26.3
-+GO_VERSION = 1.26.11
+-GO_VERSION = 1.27.3
++GO_VERSION = 1.27.4
  
  HOST_GO_GOPATH = $(HOST_DIR)/share/go-path
  HOST_GO_HOST_CACHE = $(HOST_DIR)/share/host-go-cache
-diff --git a/package/mesa3d/mesa3d.mk b/package/mesa3d/mesa3d.mk
-index f082d3c4..e57ba033 100644
---- a/package/mesa3d/mesa3d.mk
-+++ b/package/mesa3d/mesa3d.mk
-@@ -179,9 +179,14 @@ endif
- #   - Building OpenGL ES without OpenGL is not supported, so always keep opengl enabled.
- MESA3D_CONF_OPTS += -Dopengl=true
+diff --git a/package/linux-firmware/linux-firmware.hash b/package/linux-firmware/linux-firmware.hash
+index 103f4ecf..de9ec3cb 100644
+--- a/package/linux-firmware/linux-firmware.hash
++++ b/package/linux-firmware/linux-firmware.hash
+@@ -1,5 +1,5 @@
+ # From https://mirrors.edge.kernel.org/pub/linux/kernel/firmware/sha256sums.asc
+-sha256  ac17c34fe73756926a961fbafadf8d8f07a3bd2dd2f4ea31a0fb5d50c714a49a  linux-firmware-20260810.tar.xz
++sha256  a10d1ab5baf2c74ba92e8c7cf313e691696c26bddfa6df00db795e48d70cd4ca  linux-firmware-20261019.tar.xz
  
--# libva and mesa3d have a circular dependency
--# we do not need libva support in mesa3d, therefore disable this option
-+# libva and mesa3d have a circular dependency only when libva is built
-+# with GLX/X11 support. Without X11, enable VA-API in mesa3d (wyse).
-+ifeq ($(BR2_PACKAGE_LIBVA)$(BR2_PACKAGE_XORG7),y)
-+MESA3D_DEPENDENCIES += libva
-+MESA3D_CONF_OPTS += -Dgallium-va=enabled -Dvideo-codecs=all
-+else
- MESA3D_CONF_OPTS += -Dgallium-va=disabled
-+endif
+ # Hash for license files
+ sha256  8116433f4004fc0c24d72b3d9e497808b724aa0e5e1cd63fc1bf66b715b1e2e9  LICENSES/LICENCE.Abilis
+diff --git a/package/linux-firmware/linux-firmware.mk b/package/linux-firmware/linux-firmware.mk
+index 6025436c..36812c79 100644
+--- a/package/linux-firmware/linux-firmware.mk
++++ b/package/linux-firmware/linux-firmware.mk
+@@ -4,7 +4,7 @@
+ #
+ ################################################################################
  
- # libGL is only provided for a full xorg stack, without libglvnd
- ifeq ($(BR2_PACKAGE_MESA3D_OPENGL_GLX),y)
+-LINUX_FIRMWARE_VERSION = 20260810
++LINUX_FIRMWARE_VERSION = 20261019
+ LINUX_FIRMWARE_SOURCE = linux-firmware-$(LINUX_FIRMWARE_VERSION).tar.xz
+ LINUX_FIRMWARE_SITE = $(BR2_KERNEL_MIRROR)/linux/kernel/firmware
+ LINUX_FIRMWARE_INSTALL_IMAGES = YES
 diff --git a/package/tailscale/tailscale.hash b/package/tailscale/tailscale.hash
-index e2d600f0..e08c6739 100644
+index e2d600f0..e8bd7fdf 100644
 --- a/package/tailscale/tailscale.hash
 +++ b/package/tailscale/tailscale.hash
 @@ -1,3 +1,3 @@
@@ -141,10 +135,10 @@ index e2d600f0..e08c6739 100644
 -sha256  4830cd822a838d5d44fd5eeebd07a2aacaf0255fb3fb7d3852d57659f54e51bc  tailscale-1.78.1-go2.tar.gz
 -sha256  d1ee1c7947d4b2c1963ea214d5324f1d4c89f2f1d0f0224889b4dfb868dad725  LICENSE
 +# Locally computed (go-vendored tarball)
-+sha256  a4c0e5916bb4cf5a8a46791788534e8931a622ffac32dbff5bd8f21df7272029  tailscale-1.102.5-go2.tar.gz
++sha256  78201376863bc0498dce908b8abefcba38520b697ca82d4968f9120c52517298  tailscale-1.104.7-go2.tar.gz
 +sha256  a7ca6186a7963a0a60740f6047760eecd7a0234e8c38bd7e1e0bbcb324bda45b  LICENSE
 diff --git a/package/tailscale/tailscale.mk b/package/tailscale/tailscale.mk
-index 86039fd4..2f492e3e 100644
+index 86039fd4..7befbd81 100644
 --- a/package/tailscale/tailscale.mk
 +++ b/package/tailscale/tailscale.mk
 @@ -4,13 +4,17 @@
@@ -152,7 +146,7 @@ index 86039fd4..2f492e3e 100644
  ################################################################################
  
 -TAILSCALE_VERSION = 1.78.1
-+TAILSCALE_VERSION = 1.102.5
++TAILSCALE_VERSION = 1.104.7
  TAILSCALE_SITE = $(call github,tailscale,tailscale,v$(TAILSCALE_VERSION))
  TAILSCALE_LICENSE = BSD-3-Clause
  TAILSCALE_LICENSE_FILES = LICENSE

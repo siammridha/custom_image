@@ -40,7 +40,7 @@ User's rules for the image:
 
 # Layout
 
-- `buildroot/` git submodule: Buildroot 2026.02.3, unchanged. Our edits to
+- `buildroot/` git submodule: Buildroot 2026.08.2, unchanged. Our edits to
   it are in `patches/buildroot-wyse.patch`; `make` applies it. To change
   Buildroot, edit in `buildroot/` and save the diff back to the patch
   (`git -C buildroot diff > patches/buildroot-wyse.patch`).

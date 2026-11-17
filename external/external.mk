@@ -10,11 +10,12 @@ NETBIRD_GO_ENV += $(GO_MODULE_PROXY)
 # Tailscale: only the parts used here (Tailscale's own feature tags). Kept:
 # cli (vpn-guard runs "tailscale"), ssh (TS_UP_ARGS --ssh; needs netstack,
 # c2n, dbus), osrouter and dns (address, routes, DNS), ipnbus ("up" waits),
-# health, portmapper and listenrawdisco (direct connections), cachenetmap
+# health, portmapper, listenrawdisco, nattraversal and udptransport (direct
+# connections; without the last two all traffic goes through relays), cachenetmap
 # (start without the control server), bakedroots (backup TLS roots),
 # unixsocketidentity (without it the CLI gets "access denied": a Tailscale bug).
 # Made with, in Tailscale's source:
-#   go run ./cmd/featuretags --min --add=cli,ssh,osrouter,dns,ipnbus,health,portmapper,listenrawdisco,cachenetmap,bakedroots,unixsocketidentity
+#   go run ./cmd/featuretags --min --add=cli,ssh,osrouter,dns,ipnbus,health,portmapper,listenrawdisco,cachenetmap,bakedroots,unixsocketidentity,nattraversal,udptransport
 # (ts_include_cli is already in tailscale.mk). A feature added in a later
 # Tailscale version stays in until it is added here.
 TAILSCALE_TAGS += \
@@ -22,6 +23,8 @@ TAILSCALE_TAGS += \
 	ts_omit_acme \
 	ts_omit_advertiseexitnode \
 	ts_omit_advertiseroutes \
+	ts_omit_androidbin \
+	ts_omit_androiddns \
 	ts_omit_appconnectors \
 	ts_omit_aws \
 	ts_omit_bird \
@@ -35,12 +38,15 @@ TAILSCALE_TAGS += \
 	ts_omit_completion \
 	ts_omit_completion_scripts \
 	ts_omit_conn25 \
+	ts_omit_connreject \
 	ts_omit_debug \
 	ts_omit_debugeventbus \
 	ts_omit_debugportmapper \
 	ts_omit_desktop_sessions \
+	ts_omit_dnsresolvecache \
 	ts_omit_doctor \
 	ts_omit_drive \
+	ts_omit_favorites \
 	ts_omit_flashappliance \
 	ts_omit_gro \
 	ts_omit_hujsonconf \
