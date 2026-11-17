@@ -2,8 +2,8 @@
 //! (alpine.rs). Safe to run again (skips what is done).
 //!
 //! cgroup /sys/fs/cgroup/apps: every app runs in it. All apps together may
-//! use at most (RAM - 256 MB), and get a low CPU share, so the system and
-//! the VPNs always have room.
+//! use at most (RAM - 256 MB) and 4096 processes, and get a low CPU share,
+//! so the system and the VPNs always have room.
 //!
 //! Alpine folder /data/alpine: apk and the packages it installs live only
 //! there. It is unpacked from the image when missing (also after
@@ -50,6 +50,9 @@ fn cgroup() {
     let max_mb = (ram_kb / 1024).saturating_sub(256);
     sys::put(&format!("{c}/apps/memory.max"), &format!("{max_mb}M"));
     sys::put(&format!("{c}/apps/cpu.weight"), "20");
+    // A fork bomb in an app would otherwise fill the kernel's thread table
+    // (about 15000 on the 3040) and the VPNs could not start threads.
+    sys::put(&format!("{c}/apps/pids.max"), "4096");
 }
 
 /// Unpack into /data/alpine.new, then rename: a power cut halfway never
