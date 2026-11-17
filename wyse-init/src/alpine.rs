@@ -9,7 +9,7 @@
 //!                        what is left in the apps cgroup
 //!   alpine [cmd ...]     (link) runs a command inside it; no command: a shell
 //! Everything in it runs as an app: in the apps cgroup (limited RAM), low
-//! priority, and first to be killed when RAM runs out.
+//! priority, no real-time priority, and first to be killed when RAM runs out.
 use crate::{apps, sys};
 use std::fs;
 use std::os::unix::process::{CommandExt, ExitStatusExt};
@@ -173,11 +173,14 @@ fn wait_running() {
 }
 
 /// In the apps cgroup (limited RAM), low priority, first to be killed when
-/// RAM runs out. Children inherit all three.
+/// RAM runs out. Without CAP_SYS_NICE the programs it starts can't use
+/// real-time priority or raise their priority. Children inherit all of it.
 fn as_app() {
+    const CAP_SYS_NICE: u64 = 23;
     sys::put(&format!("{CG}/cgroup.procs"), &std::process::id().to_string());
     sys::put("/proc/self/oom_score_adj", "500");
     sys::nice(10);
+    sys::drop_cap(CAP_SYS_NICE);
 }
 
 /// Name servers and host names come from the main system.

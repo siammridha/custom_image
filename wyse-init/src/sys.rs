@@ -31,6 +31,7 @@ extern "C" {
     #[link_name = "kill"]
     fn c_kill(pid: c_int, sig: c_int) -> c_int;
     fn syscall(n: c_long, ...) -> c_long;
+    fn prctl(op: c_int, ...) -> c_int;
     fn dup2(old: c_int, new: c_int) -> c_int;
     #[link_name = "umask"]
     fn c_umask(mask: c_uint) -> c_uint;
@@ -110,6 +111,13 @@ pub fn sethostname(name: &str) -> io::Result<()> {
 /// Set this process's nice value (like `nice -n N` started from nice 0).
 pub fn nice(n: i32) {
     unsafe { setpriority(0, 0, n) };
+}
+
+/// Take a capability away from the programs this process starts (it stays
+/// gone for their children too).
+pub fn drop_cap(cap: c_ulong) {
+    const PR_CAPBSET_DROP: c_int = 24;
+    unsafe { prctl(PR_CAPBSET_DROP, cap) };
 }
 
 pub fn umask(mask: u32) {

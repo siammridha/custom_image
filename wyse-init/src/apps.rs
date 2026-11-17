@@ -3,7 +3,9 @@
 //!
 //! cgroup /sys/fs/cgroup/apps: every app runs in it. All apps together may
 //! use at most (RAM - 256 MB) and 4096 processes, and get a low CPU share,
-//! so the system and the VPNs always have room.
+//! so the system and the VPNs always have room. Apps can't use real-time
+//! priority (alpine.rs), and real-time programs leave 20% of the CPU time
+//! to the rest (fair_server).
 //!
 //! Alpine folder /data/alpine: apk and the packages it installs live only
 //! there. It is unpacked from the image when missing (also after
@@ -53,6 +55,28 @@ fn cgroup() {
     // A fork bomb in an app would otherwise fill the kernel's thread table
     // (about 15000 on the 3040) and the VPNs could not start threads.
     sys::put(&format!("{c}/apps/pids.max"), "4096");
+    fair_server();
+}
+
+/// Normal programs (the VPNs, SSH) get at least 20 ms of every 100 ms on
+/// each CPU, even when real-time programs want it all. The kernel's
+/// default is 50 ms of every 1 s, so under a real-time load an SSH check
+/// took 6-13 s; with this, 2-3 s. (Since kernel 6.12 this "fair server"
+/// does the job of sched_rt_runtime_us.) It is set in debugfs.
+fn fair_server() {
+    let d = "/sys/kernel/debug";
+    let mine = !sys::mounted(d) && sys::mount_fs("debugfs", d, "debugfs", 0, "").is_ok();
+    if let Ok(rd) = fs::read_dir(format!("{d}/sched/fair_server")) {
+        for e in rd.flatten() {
+            let p = e.path();
+            // Period first: 50 ms of 100 ms is allowed, 20 ms of 1 s too.
+            sys::put(&format!("{}/period", p.display()), "100000000");
+            sys::put(&format!("{}/runtime", p.display()), "20000000");
+        }
+    }
+    if mine {
+        let _ = sys::umount(d);
+    }
 }
 
 /// Unpack into /data/alpine.new, then rename: a power cut halfway never
