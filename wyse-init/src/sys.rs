@@ -47,6 +47,7 @@ pub const MS_NOATIME: u64 = 1024;
 pub const MS_MOVE: u64 = 8192;
 pub const SIGKILL: i32 = 9;
 pub const SIGTERM: i32 = 15;
+pub const SIGUSR1: i32 = 10;
 const MNT_DETACH: c_int = 2;
 const SIG_IGN: usize = 1;
 const SYS_PIVOT_ROOT: c_long = 155; // x86_64
@@ -288,8 +289,8 @@ pub fn output_timeout(prog: &str, args: &[String], secs: u64) -> (bool, String) 
     }
 }
 
-/// Send SIGTERM to every process named exactly `name` (like `pkill -x`).
-pub fn kill_name(name: &str) {
+/// Send `sig` to every process named exactly `name` (like `pkill -x`).
+pub fn kill_name(name: &str, sig: i32) {
     let me = std::process::id().to_string();
     let Ok(rd) = fs::read_dir("/proc") else { return };
     for e in rd.flatten() {
@@ -303,7 +304,7 @@ pub fn kill_name(name: &str) {
         }
         if comm.trim_end_matches('\n') == name {
             if let Ok(p) = pid.parse() {
-                kill(p, SIGTERM);
+                kill(p, sig);
             }
         }
     }

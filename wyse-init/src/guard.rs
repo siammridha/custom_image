@@ -3,6 +3,9 @@
 //!   - not connected or logged out: run "up" again (also the first login)
 //!   - one down for 10 min: restart that daemon (init starts it again)
 //!   - both down for 30 min: reboot (a fresh boot clears everything else)
+//!   - no default route: ask udhcpc to renew the lease. The kernel drops
+//!     the routes when the link goes down (cable out, switch restart) and
+//!     udhcpc only adds them again at its next renew, which can be hours.
 //! Once per boot it applies the locked settings from /rom/etc/wyse/vpn.conf.
 //! It also keeps the NetBird log in RAM small.
 use crate::config::Config;
@@ -85,6 +88,14 @@ fn backend_state(json: &str) -> &str {
     rest.strip_prefix('"').and_then(|r| r.split('"').next()).unwrap_or("")
 }
 
+/// Is there a default route (destination and mask 0) in /proc/net/route?
+fn has_default_route(table: &str) -> bool {
+    table.lines().skip(1).any(|l| {
+        let f: Vec<&str> = l.split_whitespace().collect();
+        f.len() >= 8 && f[1] == "00000000" && f[7] == "00000000"
+    })
+}
+
 fn trim_logs() {
     if fs::metadata(NB_LOG).map(|m| m.len() > 5 * 1024 * 1024).unwrap_or(false) {
         let _ = fs::write(NB_LOG, "");
@@ -106,8 +117,19 @@ pub fn main(c: &Config) -> ! {
     let (mut nb_last, mut nb_restart, mut nb_done) = (t, t, false);
     let (mut ts_last, mut ts_restart, mut ts_done) = (t, t, false);
     let mut any_last = t;
+    let mut no_route = false;
     loop {
         sys::sleep(30);
+
+        if has_default_route(&fs::read_to_string("/proc/net/route").unwrap_or_default()) {
+            no_route = false;
+        } else {
+            if !no_route {
+                sys::log("no default route: asking udhcpc to renew the lease (every 30 s until it is back)");
+                no_route = true;
+            }
+            sys::kill_name("udhcpc", sys::SIGUSR1);
+        }
 
         if g.nb_on {
             if (!nb_done || !g.nb_ok()) && g.nb_up(!nb_done) {
@@ -118,7 +140,7 @@ pub fn main(c: &Config) -> ! {
                 nb_last = t;
             } else if t - nb_last >= 600 && t - nb_restart >= 600 {
                 sys::log("NetBird down for 10 min: restarting it");
-                sys::kill_name("netbird");
+                sys::kill_name("netbird", sys::SIGTERM);
                 nb_restart = t;
             }
         }
@@ -136,7 +158,7 @@ pub fn main(c: &Config) -> ! {
                 ts_last = t;
             } else if t - ts_last >= 600 && t - ts_restart >= 600 {
                 sys::log("Tailscale down for 10 min: restarting it");
-                sys::kill_name("tailscaled");
+                sys::kill_name("tailscaled", sys::SIGTERM);
                 ts_restart = t;
             }
         }
@@ -168,5 +190,15 @@ mod tests {
         assert_eq!(backend_state(j), "Running");
         assert_eq!(backend_state("{\"BackendState\":\"NeedsLogin\"}"), "NeedsLogin");
         assert_eq!(backend_state(""), "");
+    }
+
+    #[test]
+    fn default_route() {
+        let head = "Iface\tDestination\tGateway \tFlags\tRefCnt\tUse\tMetric\tMask\t\tMTU\tWindow\tIRTT\n";
+        let lan = "eth0\t0050A8C0\t00000000\t0001\t0\t0\t0\t00FFFFFF\t0\t0\t0\n";
+        let def = "eth0\t00000000\t0150A8C0\t0003\t0\t0\t0\t00000000\t0\t0\t0\n";
+        assert!(!has_default_route(&format!("{head}{lan}")));
+        assert!(has_default_route(&format!("{head}{def}{lan}")));
+        assert!(!has_default_route(""));
     }
 }

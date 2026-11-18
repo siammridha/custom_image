@@ -54,6 +54,9 @@ keeps the main system small and unchanged.
   can't use the last 256 MB of RAM, can't run more than 4096 processes and
   can't use real-time priority. App network traffic waits behind the VPNs'
   traffic.
+- If the network link goes down and comes back (cable, switch, router),
+  the device gets its default route back within 30 s: vpn-guard asks
+  udhcpc to renew the lease whenever there is no default route.
 
 ## Apps and drivers
 
