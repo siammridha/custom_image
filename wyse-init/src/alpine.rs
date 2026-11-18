@@ -10,8 +10,8 @@
 //!   alpine [cmd ...]     (link) runs a command inside it; no command: a shell
 //! Everything in it runs as an app: in the apps cgroup (limited RAM), low
 //! priority, no real-time priority, and first to be killed when RAM runs out.
-//! Apps run as root but can't reach the main system's files (/persist with
-//! the VPN and SSH keys, the disk): see lock_down() and as_app().
+//! Apps run as root but can't reach the main system's files (the VPN and SSH
+//! keys, the disk): see lock_down() and as_app().
 use crate::{apps, sys};
 use std::fs;
 use std::os::unix::process::{CommandExt, ExitStatusExt};
@@ -181,8 +181,8 @@ fn wait_running() {
 /// Mounts that keep root in the chroot away from the main system (the
 /// mounts are only under /data/alpine; the main system's /dev, /proc and
 /// /sys don't change):
-///   - every disk and partition in its /dev is /dev/null: no raw writes to
-///     /persist's partition
+///   - every disk and partition in its /dev is /dev/null: no raw reads or
+///     writes of the disk
 ///   - /proc/sys and /sys read-only: no core_pattern or modprobe path that
 ///     the kernel would run as full root outside the chroot
 ///   - /proc/sysrq-trigger is /dev/null: no forced reboot or remount
@@ -216,7 +216,7 @@ fn lock_down() -> Result<(), String> {
 ///   SYS_NICE         real-time priority, raising their priority
 ///   SYS_CHROOT       leaving the chroot (chroot into a subfolder, cd ..)
 ///   SYS_PTRACE       /proc/<pid>/root, fd, mem of system processes
-///                    (e.g. /proc/1/root/persist)
+///                    (e.g. /proc/1/root/etc/dropbear)
 ///   SYS_ADMIN        mount (a disk, /proc/sys rw), leaving the apps cgroup
 ///   MKNOD            making a new disk device file
 ///   SYS_RAWIO        /dev/mem, /dev/port

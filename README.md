@@ -25,11 +25,17 @@ load at boot; only the firmware files on `firmware-<model>` are kept.
 Your VPN keys and SSH key are baked into the image. Keep built images
 private.
 
+Each device has its own image. Its NetBird, Tailscale and SSH host keys are
+computed from `keys/device.secret` (made on the first build), and its host
+name is `keys/device.hostname` (`build.sh` asks for it). The keys are the
+same after every boot and every new image built from the same secret. Keep
+a copy of both files: without them the device gets new VPN identities.
+
 ## Install
 
 - New device: write `disk.img` to its eMMC.
-- Running device: `scripts/deploy.sh <model> [ip]`. Keeps `/persist` and
-  `/data`. Refuses if the device runs the other model's image.
+- Running device: `scripts/deploy.sh <model> [ip]`. Keeps `/data`. Refuses
+  if the device runs the other model's image.
 
 ## Alpine subsystem
 
@@ -50,7 +56,7 @@ keeps the main system small and unchanged.
   commands the main system uses.
 - SSH, NetBird and Tailscale stay in the main system.
 - Apps run as root, but can't reach the main system's files: they can't
-  see `/persist` (VPN and SSH keys) or the disk, mount anything, leave the
+  read the VPN and SSH keys or the disk, mount anything, leave the
   Alpine folder, load kernel modules or change kernel settings (`/proc/sys`
   and `/sys` are read-only in Alpine). They can still see, stop and kill
   system processes; init starts those again.

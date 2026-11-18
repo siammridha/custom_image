@@ -1,38 +1,20 @@
 //! `wyse-init boot`: the one-time setup after the overlay root is up
 //! (run once by init, before the services). Only what can't be fixed in the
 //! image: /etc/hosts, root's SSH keys and the mounts are in the image.
-use crate::config::Config;
+use crate::config;
 use crate::net;
 use crate::prio;
 use crate::sys;
 use std::collections::BTreeSet;
-use std::fs::{self, DirBuilder};
-use std::os::unix::fs::DirBuilderExt;
+use std::fs;
 use std::path::Path;
 
 pub fn main() {
     std::env::set_var("PATH", "/usr/sbin:/usr/bin:/sbin:/bin");
-    let c = Config::load();
     prio::setup();
-    persist_dirs();
     coldplug();
-    hostname(&c);
+    hostname();
     network();
-}
-
-fn mkdir_mode(path: &str, mode: u32) {
-    if !Path::new(path).is_dir() {
-        let _ = DirBuilder::new().recursive(true).mode(mode).create(path);
-    }
-}
-
-/// The folders on /persist that the built-in links point to
-/// (/var/lib/tailscale, /var/lib/netbird, /etc/netbird, /etc/dropbear).
-fn persist_dirs() {
-    for d in ["/persist/tailscale", "/persist/netbird/state", "/persist/netbird/etc"] {
-        let _ = fs::create_dir_all(d);
-    }
-    mkdir_mode("/persist/dropbear", 0o700);
 }
 
 /// Load the kernel modules for the hardware found at boot: every `modalias`
@@ -67,14 +49,12 @@ fn find_modalias(dir: &Path, out: &mut BTreeSet<String>) {
     }
 }
 
-/// Host name (kernel) and /etc/hostname. Also run by set-hostname through
-/// `wyse-init hostname`.
-pub fn hostname(c: &Config) {
-    let h = c.get("HOSTNAME");
-    if let Err(e) = sys::sethostname(h) {
+/// The kernel's host name, from the image's /etc/hostname.
+fn hostname() {
+    let h = config::hostname();
+    if let Err(e) = sys::sethostname(&h) {
         eprintln!("hostname {h}: {e}");
     }
-    let _ = fs::write("/etc/hostname", format!("{h}\n"));
 }
 
 /// Loopback up, then DHCP on every eth*/en* interface.

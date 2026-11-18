@@ -53,7 +53,7 @@ is never reached on this device.
 | e2fsck | `/etc/e2fsck.conf`, `/var/lib/e2fsprogs` | Optional |
 | mke2fs | `/var/lib/e2fsprogs` | Optional |
 | sfdisk | `/etc/terminal-colors.d` | Optional colors |
-| dropbear | `/etc/dropbear/*_host_key` | `/etc/dropbear` links to `/persist/dropbear`; keys made with `-R` |
+| dropbear | `/etc/dropbear/*_host_key` | `/etc/dropbear` links to `/var/run/dropbear` (unused); the host key is baked in `/etc/wyse/dropbear` and given with `-r` |
 | dropbear | `/bin/cp`, `/usr/bin/dbclient` | Only used by `scp`, which is not in the image |
 | wyse-init | `/sbin/openrc` | Run inside `/data/alpine` |
 | wyse-init | `/usr/local/rustup/.../library/...rs` (15) | Rust library source paths in error messages. Removing them needs nightly Rust. |
@@ -68,7 +68,6 @@ is never reached on this device.
 |---|---|
 | `/etc/mtab` | `/proc/self/mounts` |
 | `/etc/resolv.conf` | `/run/resolv.conf` (written by the udhcpc handler) |
-| `/var/lib/tailscale`, `/var/lib/netbird`, `/etc/netbird`, `/etc/dropbear` | Folders on `/persist`, made by `wyse-init boot` |
 | `/var/log`, `/var/tmp` | `/tmp` |
 | `/var/run` | `/run` |
 

@@ -10,11 +10,24 @@ mkdir -p "$T/etc/wyse"
 echo "$MODEL" > "$T/etc/wyse/model"
 
 # Mount points used by /sbin/preinit.
-mkdir -p "$T/rom" "$T/persist" "$T/media/overlay" "$T/mnt" "$T/data"
+rm -rf "$T/persist"
+mkdir -p "$T/rom" "$T/media/overlay" "$T/mnt" "$T/data"
+
+# Settings from the repo's .env (or the file in $WYSE_ENV).
+ENV=${WYSE_ENV:-$B/../../../.env}
+[ -f "$ENV" ] || ENV=/dev/null
+get() { sed -n "s/^$1=//p" "$ENV" | head -n 1 | tr -d '\r'; }
+# HOST_DOMAIN is the self-hosted NetBird server; HOST_IP is its address.
+# NETBIRD_URL in .env overrides the default management URL.
+ip=$(get HOST_IP); dom=$(get HOST_DOMAIN)
+NB_URL=$(get NETBIRD_URL)
+[ -z "$NB_URL" ] && [ -n "$dom" ] && NB_URL=https://$dom:4478
 
 # wyse-init: preinit, boot, services, vpn-guard, apps setup and the DHCP
-# lease handler, in one Rust program (no boot scripts).
+# lease handler, in one Rust program (no boot scripts). The NetBird
+# management URL is built into it (wyse-init/src/config.rs).
 WI=$B/../../../wyse-init
+WYSE_NB_MANAGEMENT_URL=$NB_URL \
 CARGO_TARGET_X86_64_UNKNOWN_LINUX_MUSL_LINKER=$HOST_DIR/bin/x86_64-buildroot-linux-musl-gcc \
 	cargo build -q --release --target x86_64-unknown-linux-musl \
 	--manifest-path "$WI/Cargo.toml" --target-dir "$BUILD_DIR/wyse-init"
@@ -56,13 +69,23 @@ echo "alpine-minirootfs: $AF"
 # Made into the image's archive further down (alpine-root.sh), once the
 # private root CA is known.
 
-# State that must survive an overlay wipe lives on the persist partition.
-# These links are part of the read-only image, so a wipe can't remove them.
+# The device's host name (keys/device.hostname, asked by build.sh).
+K=$B/../../../keys
+H=$(cat "$K/device.hostname" 2>/dev/null || true)
+echo "$H" | grep -qE '^[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?$' ||
+	{ echo "keys/device.hostname: missing or not a valid host name (build with ./build.sh)"; exit 1; }
+echo "$H" > "$T/etc/hostname"
+rm -f "$T/usr/sbin/set-hostname"  # old images had it; Buildroot keeps old files
+
+# VPN and SSH keys: computed from the device's secret (keys/device.secret)
+# and baked into the image, so they are the same after every boot.
 mkdir -p "$T/var/lib"
-ln -snf /persist/tailscale     "$T/var/lib/tailscale"
-ln -snf /persist/netbird/state "$T/var/lib/netbird"
-ln -snf /persist/netbird/etc   "$T/etc/netbird"
-ln -snf /persist/dropbear      "$T/etc/dropbear"
+rm -rf "$T/var/lib/tailscale" "$T/var/lib/netbird" "$T/etc/wyse/dropbear" "$T/etc/netbird"
+# The dropbear package's link (to /var/run/dropbear); the key is elsewhere.
+rm -rf "$T/etc/dropbear"
+ln -snf /var/run/dropbear "$T/etc/dropbear"
+cargo run -q --release --manifest-path "$B/../../../device-keys/Cargo.toml" \
+	--target-dir "$BUILD_DIR/device-keys" -- "$K/device.secret" "$T"
 
 # Kernel modules: the system's own (IMAGE_MODULES) and the model's drivers
 # (modules-<model>), each with every module it needs. The kernel builds
@@ -243,26 +266,18 @@ mkdir -p "$T/root/.ssh" && chmod 0700 "$T/root" "$T/root/.ssh"
 printf '127.0.0.1\tlocalhost\n' > "$T/etc/hosts"
 rm -f "$T/etc/wyse/authorized_keys" "$T/etc/wyse/hosts"
 
-# Settings from the repo's .env (or the file in $WYSE_ENV).
-ENV=${WYSE_ENV:-$B/../../../.env}
+# The VPN keys, in files only root can read. NetBird and Tailscale read
+# them themselves (--setup-key-file, --auth-key=file:), so the keys are
+# never on a command line, where apps could read them.
+rm -f "$T/etc/wyse/vpn.conf" "$T/etc/wyse/netbird.key" "$T/etc/wyse/tailscale.key"
+key() { [ -n "$2" ] && (umask 077; printf '%s\n' "$2" > "$T/etc/wyse/$1"); true; }
+key netbird.key "$(get NETBIRD_KEY)"
+key tailscale.key "$(get TAILSCALE_KEY)"
+
+[ -n "$dom" ] && [ -n "$ip" ] && printf '%s\t%s\n' "$ip" "$dom" >> "$T/etc/hosts"
+
 CA=
 if [ -f "$ENV" ]; then
-	get() { sed -n "s/^$1=//p" "$ENV" | head -n 1 | tr -d '\r'; }
-	setconf() { sed -i "s|^$1=.*|$1=\"$2\"|" "$T/etc/wyse/vpn.conf"; }
-
-	v=$(get TAILSCALE_KEY); [ -n "$v" ] && setconf TS_AUTHKEY "$v"
-	v=$(get NETBIRD_KEY); [ -n "$v" ] || v=$(get NETBITD_KEY)
-	[ -n "$v" ] && setconf NB_SETUP_KEY "$v"
-
-	# HOST_DOMAIN is the self-hosted NetBird server; HOST_IP is its address.
-	# NETBIRD_URL in .env overrides the default management URL.
-	ip=$(get HOST_IP); dom=$(get HOST_DOMAIN)
-	if [ -n "$dom" ]; then
-		v=$(get NETBIRD_URL)
-		setconf NB_MANAGEMENT_URL "${v:-https://$dom:4478}"
-		[ -n "$ip" ] && printf '%s\t%s\n' "$ip" "$dom" >> "$T/etc/hosts"
-	fi
-
 	v=$(get SSH_PUBLIC_KEY)
 	[ -n "$v" ] && echo "$v" >> "$K"
 

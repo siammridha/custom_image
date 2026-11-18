@@ -6,49 +6,46 @@
 //!   - no default route: ask udhcpc to renew the lease. The kernel drops
 //!     the routes when the link goes down (cable out, switch restart) and
 //!     udhcpc only adds them again at its next renew, which can be hours.
-//! Once per boot it applies the locked settings from /rom/etc/wyse/vpn.conf.
+//! Once per boot it applies the settings fixed in the image (config.rs).
 //! It also keeps the NetBird log in RAM small.
-use crate::config::Config;
+use crate::config;
 use crate::sys;
 use std::fs;
 
 const NB_LOG: &str = "/var/log/netbird/client.log";
 
-struct Guard<'a> {
-    c: &'a Config,
-    nb_on: bool,
-    ts_on: bool,
+struct Guard {
+    hostname: String,
 }
 
-impl Guard<'_> {
+impl Guard {
     fn cmd(&self, prog: &str, args: Vec<String>, secs: u64) -> (bool, String) {
         sys::output_timeout(prog, &args, secs)
     }
 
     fn nb_ok(&self) -> bool {
-        self.nb_on
-            && self
-                .cmd("netbird", vec!["status".into()], 20)
-                .1
-                .lines()
-                .any(|l| l.starts_with("Management: Connected"))
+        self.cmd("netbird", vec!["status".into()], 20)
+            .1
+            .lines()
+            .any(|l| l.starts_with("Management: Connected"))
     }
 
     /// "up" does not apply new settings while connected ("Already
     /// connected"), so the first "up" of each boot disconnects first.
     fn nb_up(&self, first: bool) -> bool {
-        let c = self.c;
         // --network-monitor (off by default on Linux): reconnect as soon as
         // the default route changes, not after its server connection times
         // out (up to 40 s, then retries up to 15 s apart).
-        let mut a = vec!["up".to_string(), "--network-monitor".into(), "--hostname".into(), c.get("HOSTNAME").into()];
-        if !c.get("NB_SETUP_KEY").is_empty() {
-            a.extend(["--setup-key".into(), c.get("NB_SETUP_KEY").into()]);
+        let mut a = vec!["up".to_string(), "--network-monitor".into(), "--hostname".into(), self.hostname.clone()];
+        // NetBird reads the key from the file (client/cmd/root.go
+        // getSetupKeyFromFile), so it is not on the command line.
+        if let Some(f) = config::nb_key_file() {
+            a.extend(["--setup-key-file".into(), f]);
         }
-        if !c.get("NB_MANAGEMENT_URL").is_empty() {
-            a.extend(["--management-url".into(), c.get("NB_MANAGEMENT_URL").into()]);
+        if !config::NB_MANAGEMENT_URL.is_empty() {
+            a.extend(["--management-url".into(), config::NB_MANAGEMENT_URL.into()]);
         }
-        a.extend(c.words("NB_UP_ARGS"));
+        a.extend(config::NB_UP_ARGS.iter().map(|s| s.to_string()));
         if first {
             self.cmd("netbird", vec!["down".into()], 30);
         }
@@ -60,25 +57,23 @@ impl Guard<'_> {
     }
 
     fn ts_ok(&self) -> bool {
-        self.ts_on && self.ts_status().contains("\"Online\": true")
+        self.ts_status().contains("\"Online\": true")
     }
 
     fn ts_up(&self) {
-        let c = self.c;
-        let mut a = vec!["up".to_string(), "--timeout=45s".into(), format!("--hostname={}", c.get("HOSTNAME"))];
-        if !c.get("TS_AUTHKEY").is_empty() {
-            a.push(format!("--auth-key={}", c.get("TS_AUTHKEY")));
+        let mut a = vec!["up".to_string(), "--timeout=45s".into(), format!("--hostname={}", self.hostname)];
+        // "file:": Tailscale reads the key from the file (cmd/tailscale/cli
+        // up.go resolveValueFromFile), so it is not on the command line.
+        if let Some(f) = config::ts_key_file() {
+            a.push(format!("--auth-key=file:{f}"));
         }
-        if !c.get("TS_LOGIN_SERVER").is_empty() {
-            a.push(format!("--login-server={}", c.get("TS_LOGIN_SERVER")));
-        }
-        a.extend(c.words("TS_UP_ARGS"));
+        a.extend(config::TS_UP_ARGS.iter().map(|s| s.to_string()));
         self.cmd("tailscale", a, 60);
     }
 
     fn ts_set(&self) -> bool {
-        let mut a = vec!["set".to_string(), format!("--hostname={}", self.c.get("HOSTNAME"))];
-        a.extend(self.c.words("TS_UP_ARGS"));
+        let mut a = vec!["set".to_string(), format!("--hostname={}", self.hostname)];
+        a.extend(config::TS_UP_ARGS.iter().map(|s| s.to_string()));
         self.cmd("tailscale", a, 30).0
     }
 }
@@ -112,9 +107,9 @@ fn trim_logs() {
     }
 }
 
-pub fn main(c: &Config) -> ! {
+pub fn main() -> ! {
     sys::log_open(c"vpn-guard");
-    let g = Guard { c, nb_on: c.is("NETBIRD", "yes"), ts_on: c.is("TAILSCALE", "yes") };
+    let g = Guard { hostname: config::hostname() };
 
     let t = sys::uptime();
     let (mut nb_last, mut nb_restart, mut nb_done) = (t, t, false);
@@ -134,42 +129,36 @@ pub fn main(c: &Config) -> ! {
             sys::kill_name("udhcpc", sys::SIGUSR1);
         }
 
-        if g.nb_on {
-            if (!nb_done || !g.nb_ok()) && g.nb_up(!nb_done) {
-                nb_done = true;
-            }
-            let t = sys::uptime();
-            if g.nb_ok() {
-                nb_last = t;
-            } else if t - nb_last >= 600 && t - nb_restart >= 600 {
-                sys::log("NetBird down for 10 min: restarting it");
-                sys::kill_name("netbird", sys::SIGTERM);
-                nb_restart = t;
-            }
+        if (!nb_done || !g.nb_ok()) && g.nb_up(!nb_done) {
+            nb_done = true;
+        }
+        let t = sys::uptime();
+        if g.nb_ok() {
+            nb_last = t;
+        } else if t - nb_last >= 600 && t - nb_restart >= 600 {
+            sys::log("NetBird down for 10 min: restarting it");
+            sys::kill_name("netbird", sys::SIGTERM);
+            nb_restart = t;
         }
 
-        if g.ts_on {
-            match backend_state(&g.ts_status()) {
-                "Running" | "Starting" => {}
-                _ => g.ts_up(), // NeedsLogin, Stopped (tailscale down), NoState
-            }
-            if !ts_done && g.ts_set() {
-                ts_done = true;
-            }
-            let t = sys::uptime();
-            if g.ts_ok() {
-                ts_last = t;
-            } else if t - ts_last >= 600 && t - ts_restart >= 600 {
-                sys::log("Tailscale down for 10 min: restarting it");
-                sys::kill_name("tailscaled", sys::SIGTERM);
-                ts_restart = t;
-            }
+        match backend_state(&g.ts_status()) {
+            "Running" | "Starting" => {}
+            _ => g.ts_up(), // NeedsLogin, Stopped (tailscale down), NoState
+        }
+        if !ts_done && g.ts_set() {
+            ts_done = true;
+        }
+        let t = sys::uptime();
+        if g.ts_ok() {
+            ts_last = t;
+        } else if t - ts_last >= 600 && t - ts_restart >= 600 {
+            sys::log("Tailscale down for 10 min: restarting it");
+            sys::kill_name("tailscaled", sys::SIGTERM);
+            ts_restart = t;
         }
 
         let t = sys::uptime();
-        if !g.nb_on && !g.ts_on {
-            // both turned off: nothing to guard
-        } else if g.nb_ok() || g.ts_ok() {
+        if g.nb_ok() || g.ts_ok() {
             any_last = t;
         } else if t - any_last >= 1800 {
             sys::log("NetBird and Tailscale down for 30 min: rebooting");

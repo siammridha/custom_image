@@ -2,9 +2,6 @@
 //! (respawn). When it exits, init starts it again.
 //!   - never killed when RAM runs out (oom_score_adj -1000), except apps
 //!   - in the vpn cgroup: top priority over the apps (prio.rs)
-//! A service that is turned off in the settings just waits, so init does
-//! not keep restarting it.
-use crate::config::Config;
 use crate::{alpine, dhcp, guard, prio, sys};
 use std::fs;
 use std::os::unix::process::CommandExt;
@@ -12,7 +9,6 @@ use std::path::Path;
 use std::process::{exit, Command};
 
 pub fn main(name: &str) {
-    let c = Config::load();
     std::env::set_var("PATH", "/usr/sbin:/usr/bin:/sbin:/bin");
 
     // Slow down restarts if a service keeps exiting at once.
@@ -37,13 +33,11 @@ pub fn main(name: &str) {
             start(-20, "watchdog", &["-F", "-t", "10", "/dev/watchdog"]);
         }
         "netbird" => {
-            on(&c, "NETBIRD");
             let _ = fs::create_dir_all("/var/log/netbird");
             // Logs to its default, /var/log/netbird/client.log.
             start(-10, "netbird", &["service", "run"]);
         }
         "tailscaled" => {
-            on(&c, "TAILSCALE");
             // The socket is the default, /var/run/tailscale/tailscaled.sock
             // (tailscaled makes the folder).
             start(-10, "tailscaled", &["--statedir=/var/lib/tailscale"]);
@@ -51,7 +45,8 @@ pub fn main(name: &str) {
         "dropbear" => {
             sys::umask(0o077);
             // No password logins: built without them (dropbear-localoptions.h).
-            start(-10, "dropbear", &["-F", "-R"]);
+            // The host key is baked into the image (device-keys).
+            start(-10, "dropbear", &["-F", "-r", "/etc/wyse/dropbear/dropbear_ed25519_host_key"]);
         }
         "ntpd" => {
             // The NTP servers from the DHCP lease (option 42, saved by
@@ -69,7 +64,7 @@ pub fn main(name: &str) {
         }
         "vpn-guard" => {
             sys::nice(-10);
-            guard::main(&c);
+            guard::main();
         }
         "apps" => {
             // The Alpine subsystem, which starts the apps (alpine.rs).
@@ -78,13 +73,6 @@ pub fn main(name: &str) {
             alpine::run();
         }
         _ => sys::idle(),
-    }
-}
-
-/// Wait forever if the service is turned off.
-fn on(c: &Config, key: &str) {
-    if !c.is(key, "yes") {
-        sys::idle();
     }
 }
 

@@ -1,104 +1,57 @@
-//! Settings: HOSTNAME from /persist/hostname (written by set-hostname;
-//! "localhost" when missing) and the locked VPN settings from the read-only
-//! image. In vpn.conf, lines are `KEY=value`, `KEY="value"` or `KEY='value'`; `#` starts a comment.
-use std::collections::HashMap;
+//! Settings, all fixed in the image (build a new image to change them):
+//!   - host name: /etc/hostname (baked from keys/device.hostname)
+//!   - NetBird setup key and Tailscale auth key: files in /etc/wyse, root
+//!     only (from .env). NetBird and Tailscale read them themselves, so the
+//!     keys are never on a command line, where apps could read them
+//!   - everything else: below, in this program
+//! Files are read from /rom, the read-only image, so a change in RAM is not
+//! used.
 use std::fs;
 use std::path::Path;
 
-pub struct Config(HashMap<String, String>);
+/// NetBird's management server, from .env at build time (NETBIRD_URL, or
+/// https://HOST_DOMAIN:4478). Empty: NetBird's default.
+pub const NB_MANAGEMENT_URL: &str = match option_env!("WYSE_NB_MANAGEMENT_URL") {
+    Some(v) => v,
+    None => "",
+};
 
-const HOSTNAME_FILE: &str = "/persist/hostname";
+/// NetBird SSH on (root login). Exit node is set in the NetBird dashboard:
+/// Network Routes, 0.0.0.0/0, this peer as routing peer.
+/// --disable-dns: NetBird leaves /etc/resolv.conf alone (DNS from DHCP), so
+/// name lookups work even when NetBird is down.
+/// --disable-auto-connect: the daemon waits for vpn-guard, which connects
+/// with these settings, so they are applied on every boot.
+pub const NB_UP_ARGS: &[&str] = &["--allow-server-ssh", "--enable-ssh-root", "--disable-dns", "--disable-auto-connect"];
 
-/// Devices set up before /persist/hostname: keep the name from the old
-/// /persist/wyse.conf (preinit removes that file, it is not in KEEP).
-pub fn move_old_hostname() {
-    if Path::new(HOSTNAME_FILE).exists() {
-        return;
-    }
-    let mut c = Config(HashMap::new());
-    c.read("/persist/wyse.conf");
-    let h = c.get("HOSTNAME");
-    if !h.is_empty() {
-        let _ = fs::write(HOSTNAME_FILE, format!("{h}\n"));
-    }
-}
+/// Tailscale SSH on. No exit node. No Tailscale firewall rules: they drop
+/// all traffic from 100.64.0.0/10 that does not come in over Tailscale, and
+/// NetBird's addresses (100.80.0.0/16) are in that range.
+pub const TS_UP_ARGS: &[&str] = &["--ssh", "--netfilter-mode=off"];
 
-impl Config {
-    pub fn load() -> Config {
-        let mut c = Config(HashMap::new());
-        let h = fs::read_to_string(HOSTNAME_FILE).unwrap_or_default();
-        let h = if h.trim().is_empty() { "localhost" } else { h.trim() };
-        c.0.insert("HOSTNAME".into(), h.into());
-        if Path::new("/rom/etc/wyse/vpn.conf").exists() {
-            c.read("/rom/etc/wyse/vpn.conf");
-        } else {
-            c.read("/etc/wyse/vpn.conf");
-        }
-        c
-    }
-
-    fn read(&mut self, path: &str) {
-        if let Ok(text) = fs::read_to_string(path) {
-            self.parse(&text);
-        }
-    }
-
-    fn parse(&mut self, text: &str) {
-        for line in text.lines() {
-            let line = line.trim();
-            if line.is_empty() || line.starts_with('#') {
-                continue;
-            }
-            let Some((key, rest)) = line.split_once('=') else { continue };
-            if key.is_empty() || !key.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_') {
-                continue;
-            }
-            self.0.insert(key.to_string(), value(rest));
-        }
-    }
-
-    /// The value, or "" when not set (like an unset shell variable).
-    pub fn get(&self, key: &str) -> &str {
-        self.0.get(key).map(String::as_str).unwrap_or("")
-    }
-
-    pub fn is(&self, key: &str, want: &str) -> bool {
-        self.get(key) == want
-    }
-
-    /// The value split on spaces (like an unquoted `$VAR` in the shell).
-    pub fn words(&self, key: &str) -> Vec<String> {
-        self.get(key).split_whitespace().map(String::from).collect()
+/// The image's own file: under /rom once the overlay root is up.
+fn image_file(path: &str) -> String {
+    let rom = format!("/rom{path}");
+    if Path::new(&rom).exists() {
+        rom
+    } else {
+        path.to_string()
     }
 }
 
-fn value(rest: &str) -> String {
-    for q in ['"', '\''] {
-        if let Some(inner) = rest.strip_prefix(q) {
-            return inner.split(q).next().unwrap_or("").to_string();
-        }
-    }
-    rest.split_whitespace().next().unwrap_or("").to_string()
+/// NetBird setup key file, if the image has one.
+pub fn nb_key_file() -> Option<String> {
+    Some(image_file("/etc/wyse/netbird.key")).filter(|f| Path::new(f).exists())
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
+/// Tailscale auth key file, if the image has one.
+pub fn ts_key_file() -> Option<String> {
+    Some(image_file("/etc/wyse/tailscale.key")).filter(|f| Path::new(f).exists())
+}
 
-    #[test]
-    fn parses_like_the_shell() {
-        let mut c = Config(HashMap::new());
-        c.parse(
-            "# comment\nHOSTNAME=wyse\nNTP_SERVERS=\"a.pool b.pool\"\nTS_UP_ARGS='--ssh'\n\
-             EMPTY=\"\"\nBAD KEY=x\nNTP=pool.ntp.org # trailing\n",
-        );
-        c.parse("HOSTNAME=\"wyse-test\"\n");
-        assert_eq!(c.get("HOSTNAME"), "wyse-test");
-        assert_eq!(c.words("NTP_SERVERS"), ["a.pool", "b.pool"]);
-        assert_eq!(c.get("TS_UP_ARGS"), "--ssh");
-        assert_eq!(c.get("EMPTY"), "");
-        assert_eq!(c.get("NTP"), "pool.ntp.org");
-        assert_eq!(c.get("MISSING"), "");
-        assert_eq!(c.get("BAD KEY"), "");
-    }
+/// The host name; "localhost" when missing.
+pub fn hostname() -> String {
+    let h = fs::read_to_string(image_file("/etc/hostname")).unwrap_or_default();
+    let h = h.trim();
+    if h.is_empty() { "localhost" } else { h }.to_string()
 }

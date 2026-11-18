@@ -1,12 +1,11 @@
 //! First program the kernel runs (init=/sbin/preinit, a link to wyse-init).
 //! The kernel has mounted partition 2 (read-only squashfs) as /.
 //!
-//!   partition 3 "persist"  -> /persist   kept; only the files listed in
-//!                                        KEEP survive a boot
-//!   partition 4 "data"     -> /data      apps and their files; never wiped
+//!   partition 3 "data"     -> /data      apps and their files; never wiped
 //!                                        (except by wyse-wipe-data)
 //!   RAM (tmpfs)            -> overlayfs upper layer: every change outside
-//!                                        /data and /persist is gone at reboot
+//!                                        /data is gone at reboot
+//! The VPN and SSH keys and the host name are baked into the image.
 //!
 //! Builds the overlay root, moves into it and starts BusyBox init.
 use crate::sys::{self, MS_MOVE, MS_NOATIME};
@@ -18,59 +17,19 @@ use std::os::unix::process::CommandExt;
 use std::path::Path;
 use std::process::Command;
 
-/// What may stay on /persist; everything else is removed at every boot.
-/// Kept: the NetBird and Tailscale keys (same VPN IPs), what lets Tailscale
-/// start while its server is unreachable (relay list, device list of each
-/// login in tailscaled.state), the SSH host keys, the host name (written by
-/// set-hostname), the wipe-data request (read later in this boot) and lost+found
-/// (e2fsck would make it again). The programs make the rest again when they
-/// start.
-const KEEP: &[&str] = &[
-    "netbird/state/default.json",
-    "tailscale/tailscaled.state",
-    "tailscale/derpmap.cached.json",
-    "tailscale/profile-data", // only the logins tailscaled.state lists
-    "tailscale/ssh",
-    "dropbear",
-    "hostname",
-    ".wipe-data",
-    "lost+found",
-];
-
 fn log(m: &str) {
     sys::kmsg(&format!("preinit: {m}"));
 }
 
-/// Remove what KEEP does not list. `rel` is `dir` relative to /persist.
-fn clean_persist(dir: &Path, rel: &str) {
-    let Ok(rd) = fs::read_dir(dir) else { return };
-    for e in rd.flatten() {
-        let name = e.file_name().to_string_lossy().into_owned();
-        let r = if rel.is_empty() { name.clone() } else { format!("{rel}/{name}") };
-        let p = e.path();
-        let is_dir = fs::symlink_metadata(&p).map(|m| m.is_dir()).unwrap_or(false);
-        if rel == "tailscale/profile-data" {
-            // One folder for each login; tailscaled.state names them
-            // "profile-<folder>". Unreadable state: keep them all.
-            let state = fs::read_to_string("/persist/tailscale/tailscaled.state");
-            if state.map_or(true, |s| s.contains(&format!("\"profile-{name}\""))) {
-                continue;
-            }
-        } else if r == "tailscale/profile-data" {
-            clean_persist(&p, &r);
-            continue;
-        } else if KEEP.contains(&r.as_str()) {
-            continue;
-        } else if is_dir && KEEP.iter().any(|k| k.starts_with(&format!("{r}/"))) {
-            clean_persist(&p, &r);
-            continue;
-        }
-        log(&format!("removing /persist/{r}"));
-        let res = if is_dir { fs::remove_dir_all(&p) } else { fs::remove_file(&p) };
-        if let Err(err) = res {
-            log(&format!("cannot remove /persist/{r}: {err}"));
-        }
+/// Set by wyse-wipe-data: format /data at the next boot.
+const WIPE: &str = "/data/.wipe-data";
+
+fn format_data(d: &str) {
+    log(&format!("formatting data partition {d}"));
+    if !sys::run_quiet("mke2fs", &["-q", "-F", "-t", "ext4", "-E", "nodiscard", "-L", "data", d]) {
+        log("mke2fs data failed");
     }
+    sys::sync();
 }
 
 fn fail(m: &str) -> ! {
@@ -144,59 +103,44 @@ fn run() -> Result<Infallible, String> {
         .and_then(Path::file_name)
         .map(|s| s.to_string_lossy().into_owned())
         .ok_or("cannot find the root disk")?;
-    let (p3, p4) = match (part_name(&disk, 3), part_name(&disk, 4)) {
-        (Some(a), Some(b)) => (a, b),
-        _ => return Err(format!("partitions 3/4 not found on {disk}")),
-    };
+    let p3 = part_name(&disk, 3).ok_or(format!("partition 3 not found on {disk}"))?;
 
-    // First boot on a new disk: grow partition 4 to the end of the disk,
+    // First boot on a new disk: grow partition 3 to the end of the disk,
     // then reboot so the kernel sees the new size.
     let dsize = sys::read_num(&format!("/sys/block/{disk}/size"));
-    let p4end = sys::read_num(&format!("/sys/block/{disk}/{p4}/start"))
-        + sys::read_num(&format!("/sys/block/{disk}/{p4}/size"));
-    if dsize > p4end + 8192 {
-        log(&format!("growing partition 4 on {disk}"));
+    let p3end = sys::read_num(&format!("/sys/block/{disk}/{p3}/start"))
+        + sys::read_num(&format!("/sys/block/{disk}/{p3}/size"));
+    if dsize > p3end + 8192 {
+        log(&format!("growing partition 3 on {disk}"));
         let d = format!("/dev/{disk}");
         let q = ["-q", "--no-reread", "--no-tell-kernel"];
         sys::run("sfdisk", &[&q[..], &["--relocate", "gpt-bak-std", &d]].concat());
-        sys::run_input("sfdisk", &[&q[..], &["-N", "4", &d]].concat(), ", +\n");
+        sys::run_input("sfdisk", &[&q[..], &["-N", "3", &d]].concat(), ", +\n");
         sys::reboot_now();
     }
 
-    // Persist partition. Only formatted when it has no ext4 at all (new disk).
+    // Data partition. Formatted when it is not a data partition yet (new
+    // disk, or an old layout), or when wyse-wipe-data asked for it. If it
+    // can't be mounted, the system still boots (without /data), so NetBird
+    // and Tailscale keep working.
     let d3 = format!("/dev/{p3}");
-    if !has_ext4(&p3) {
-        log(&format!("formatting persist partition {d3}"));
-        if !sys::run("mke2fs", &["-q", "-F", "-t", "ext4", "-L", "persist", &d3]) {
-            return Err("mke2fs persist".into());
+    if ext4_label(&p3) != "data" {
+        format_data(&d3);
+    }
+    let fsck = || {
+        if !sys::run_quiet("e2fsck", &["-p", &d3]) {
+            sys::run_quiet("e2fsck", &["-y", &d3]);
         }
+    };
+    fsck();
+    let mut data = sys::mount_fs(&d3, "/data", "ext4", MS_NOATIME, "");
+    if data.is_ok() && Path::new(WIPE).exists() {
+        let _ = sys::umount("/data");
+        format_data(&d3);
+        fsck();
+        data = sys::mount_fs(&d3, "/data", "ext4", MS_NOATIME, "");
     }
-    sys::run_quiet("e2fsck", &["-p", &d3]);
-    sys::mount_fs(&d3, "/persist", "ext4", MS_NOATIME, "")
-        .map_err(|e| format!("mount persist: {e}"))?;
-
-    // Remove anything else that built up on persist.
-    crate::config::move_old_hostname();
-    clean_persist(Path::new("/persist"), "");
-    sys::sync();
-
-    // Data partition. Formatted when wyse-wipe-data asked for it, or when it
-    // is not a data partition yet (new disk, or the old overlay partition).
-    // If it can't be mounted, the system still boots (without /data), so
-    // NetBird and Tailscale keep working.
-    let d4 = format!("/dev/{p4}");
-    if Path::new("/persist/.wipe-data").exists() || ext4_label(&p4) != "data" {
-        log(&format!("formatting data partition {d4}"));
-        if !sys::run_quiet("mke2fs", &["-q", "-F", "-t", "ext4", "-E", "nodiscard", "-L", "data", &d4]) {
-            log("mke2fs data failed");
-        }
-        let _ = fs::remove_file("/persist/.wipe-data");
-        sys::sync();
-    }
-    if !sys::run_quiet("e2fsck", &["-p", &d4]) {
-        sys::run_quiet("e2fsck", &["-y", &d4]);
-    }
-    let data = match sys::mount_fs(&d4, "/data", "ext4", MS_NOATIME, "") {
+    let data = match data {
         Ok(()) => true,
         Err(e) => {
             log(&format!("cannot mount data partition ({e}), booting without /data"));
@@ -220,7 +164,7 @@ fn run() -> Result<Infallible, String> {
     )
     .map_err(|e| format!("mount overlayfs: {e}"))?;
 
-    let mut moves = vec![("/persist", "/mnt/persist"), ("/media/overlay", "/mnt/media/overlay")];
+    let mut moves = vec![("/media/overlay", "/mnt/media/overlay")];
     if data {
         moves.push(("/data", "/mnt/data"));
     }

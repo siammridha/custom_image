@@ -4,4 +4,4 @@
 echo "This erases everything in /data. Type YES to continue."
 read -r ans
 [ "$ans" = YES ] || exit 1
-touch /persist/.wipe-data && sync && reboot
+touch /data/.wipe-data && sync && reboot

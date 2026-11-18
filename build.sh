@@ -29,6 +29,14 @@ done
 CA=$(sed -n 's/^ROOT_CA=//p' .env | tr -d '"\r')
 [ -z "$CA" ] || [ -f "$CA" ] || { echo "ROOT_CA in .env points to $CA, which does not exist." >&2; exit 1; }
 
+# This device's host name, baked into the image (keys/device.hostname).
+H=keys/device.hostname
+while ! grep -qE '^[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?$' $H 2>/dev/null; do
+	printf "Host name for this device (letters, digits and '-', max 63): "
+	read -r h || exit 1
+	echo "$h" > $H
+done
+
 echo "Building the Wyse $MODEL image (log: build.log)..."
 start=$(date +%s)
 make MODEL=$MODEL > build.log 2>&1 &

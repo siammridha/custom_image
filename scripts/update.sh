@@ -1,5 +1,5 @@
 # Runs on the Wyse from /tmp/inst (RAM). Writes boot (p1) and root (p2)
-# contents only; partition table, persist and overlay are kept.
+# contents only; the partition table and /data are kept.
 # Usage: ld-musl busybox sh /tmp/inst/update.sh <disk> <boot md5> <root md5>
 I=/tmp/inst
 B="$I/ld-musl-x86_64.so.1 --library-path $I $I/busybox"

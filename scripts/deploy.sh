@@ -4,9 +4,9 @@
 #   scripts/deploy.sh <model> [device-ip]    (model: 3040 or 5020;
 #                                             ip default: DEVICE_IP in .env)
 #
-# Writes only the boot (p1) and root (p2) partitions; /persist and /data are
-# kept. The device runs scripts/update.sh from RAM with a copied busybox, so
-# it does not depend on the old root filesystem while overwriting it.
+# Writes only the boot (p1) and root (p2) partitions; /data is kept. The
+# device runs scripts/update.sh from RAM with a copied busybox, so it does
+# not depend on the old root filesystem while overwriting it.
 # Same partition offsets as external/board/wyse/genimage.cfg.
 set -eu
 cd "$(dirname "$0")/.."

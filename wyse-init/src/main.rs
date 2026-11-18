@@ -3,11 +3,10 @@
 //!
 //!   /sbin/preinit (link)            first program the kernel runs: disks,
 //!                                   RAM overlay, then BusyBox init
-//!   wyse-init boot                  once from inittab: persist folders,
-//!                                   drivers, host name, network, SSH keys
+//!   wyse-init boot                  once from inittab: drivers, host name,
+//!                                   network
 //!   wyse-init run <service>         from inittab (respawn): starts one service
 //!   wyse-init stop-apps             from inittab at shutdown: stops the apps
-//!   wyse-init hostname              apply the host name again (set-hostname)
 //!   alpine (link)                   run a command in the Alpine subsystem
 //!   udhcpc-event (link)             udhcpc's lease handler
 mod alpine;
@@ -43,9 +42,8 @@ fn main() {
         "boot" => boot::main(),
         "run" => service::main(arg(2)),
         "stop-apps" => alpine::stop(),
-        "hostname" => boot::hostname(&config::Config::load()),
         _ => {
-            eprintln!("usage: wyse-init boot | run <service> | stop-apps | hostname");
+            eprintln!("usage: wyse-init boot | run <service> | stop-apps");
             exit(1);
         }
     }

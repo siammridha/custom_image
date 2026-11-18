@@ -12,6 +12,8 @@
   published.
 - Base new code on what a real, working reference implementation does (read
   its source first), not on memory or a spec.
+- This project is Rust only: write new programs and tools in Rust, not Go
+  or any other language.
 - Long commands on the device (flashing, big transfers): run them in the
   background and use `ssh -n`. A foreground run once looked frozen.
 - Every build: the user must see its progress. Build with `./build.sh <model>`
@@ -49,6 +51,8 @@ User's rules for the image:
 - `external/` Buildroot external tree: `configs/wyse_defconfig`,
   `board/wyse/` (kernel fragments, genimage, grub, post-build, rootfs
   overlay), `package/netbird`.
+- `device-keys/` Rust program run by post-build.sh: bakes the VPN and SSH
+  keys into the image.
 - `wyse-init/` Rust program (x86_64 musl) that does preinit, boot, services,
   vpn-guard, apps setup and DHCP lease handling. No boot shell scripts.
 - `apps/<name>/install.sh` installs an app on a running device.
@@ -59,10 +63,15 @@ User's rules for the image:
 # Disk and boot
 
 Partitions: p1 EFI/boot (64M at 1M), p2 read-only squashfs root (512M at
-65M), p3 `/persist` (128M), p4 overlay/`/data`.
-- The overlay is in RAM: every boot starts fresh from the image.
-- `/persist` keeps the VPN identities, dropbear host keys and `hostname`
-  (set with `set-hostname`).
+65M), p3 `/data` (rest of the disk; grown on the first boot).
+- The overlay is in RAM: every boot starts fresh from the image. `/data` is
+  the only place that keeps changes.
+- The VPN and SSH keys and the host name are baked into the image, so they
+  are the same after every boot. `device-keys/` (Rust, runs at build time)
+  computes each key as SHA-256(secret + label) from `keys/device.secret`
+  (made if missing); the host name is `keys/device.hostname` (`build.sh`
+  asks). One image per device. Tailscale logs in again at every boot with
+  `TAILSCALE_KEY`, so that key must be reusable and not expire.
 - `/data` keeps apps and `/data/alpine` (an Alpine root: `alpine apk add ...`,
   `alpine <cmd>` runs a command in it). It is a separate subsystem with its
   own busybox (Alpine's); the system's `/bin/busybox` has only the commands
@@ -83,7 +92,13 @@ Partitions: p1 EFI/boot (64M at 1M), p2 read-only squashfs root (512M at
   iocost is turned on for the disk. Each interface gets a 2-band `prio`
   qdisc; an nftables rule (table `ip wyse`) puts traffic from `apps` in the
   low band.
-- `/etc/wyse/vpn.conf` is locked: values come from `.env` at build time.
+- VPN settings are fixed in the image (no settings file). `.env`
+  `NETBIRD_KEY` and `TAILSCALE_KEY` go to `/etc/wyse/netbird.key` and
+  `/etc/wyse/tailscale.key` (root only). vpn-guard passes the file paths
+  (`--setup-key-file`, `--auth-key=file:`), so the keys are never on a
+  command line, where apps could read them. The management URL (from
+  `HOST_DOMAIN` or `NETBIRD_URL`) and the `up` arguments are built into
+  wyse-init (`wyse-init/src/config.rs`).
 
 # Build
 
@@ -116,7 +131,8 @@ Partitions: p1 EFI/boot (64M at 1M), p2 read-only squashfs root (512M at
 - Wyse 3040 at `DEVICE_IP` in `.env`. SSH:
   `ssh -i keys/wyse_ed25519 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null root@<ip>`.
   No scp on the device; copy with `ssh ... 'cat > file' < file`.
-- Deploy: `scripts/deploy.sh 3040` (keeps `/persist` and `/data`).
+- Deploy: `scripts/deploy.sh 3040` (keeps `/data`). It writes only p1 and
+  p2, so it can't change the partition layout.
 - The image's busybox has no gzip or gunzip: unpack `.tar.gz` files with
   `alpine tar -xzf - -C <dir> < f.tar.gz`.
 - Built-in sound: SOF driver, card `rt5672`, firmware from Alpine's
