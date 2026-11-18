@@ -1,4 +1,6 @@
 # Build the image for one model:  make MODEL=3040   (or MODEL=5020)
+# Development build (extra BusyBox commands, busybox-dev.fragment):
+#                                 make MODEL=3040 DEV=1
 # Or run ./build.sh, which asks for the model.
 # Other Buildroot goals:  make MODEL=3040 menuconfig / linux-menuconfig / ...
 # Output image:           $(OUT)/images/disk.img (kept off the virtiofs workspace)
@@ -22,13 +24,22 @@ BRMAKE = env -u MAKELEVEL -u MAKEFLAGS -u MFLAGS BR2_DL_DIR=$(DL) XZ_DEFAULTS=-T
 	make -j$(JOBS) -l$(shell nproc) -C $(BR) BR2_EXTERNAL=$(EXT) O=$(OUT)
 GOALS := $(or $(MAKECMDGOALS),all)
 PATCH := $(CURDIR)/patches/buildroot-wyse.patch
-# The model's config: wyse_defconfig plus the model's kernel fragment, and
-# the model name passed to post-build.sh (written to /etc/wyse/model).
+# The model's config: wyse_defconfig plus the model's kernel fragment, the
+# model name passed to post-build.sh, and BusyBox's development fragment.
 DEFCONFIG := $(OUT)/wyse-$(MODEL)_defconfig
+# Development builds copy busybox-dev.fragment here; production builds leave
+# it empty. Written only when it changes: a newer file makes
+# Buildroot rebuild BusyBox.
+BBFRAG := $(OUT)/busybox-build.fragment
+bb_fragment = mkdir -p $(OUT) && \
+	$(if $(filter 1,$(DEV)),cat $(EXT)/board/wyse/busybox-dev.fragment,printf '') \
+		> $(BBFRAG).new && \
+	{ cmp -s $(BBFRAG).new $(BBFRAG) && rm $(BBFRAG).new || mv $(BBFRAG).new $(BBFRAG); }
 model_defconfig = mkdir -p $(OUT) && \
 	{ cat $(EXT)/configs/wyse_defconfig; \
 	  echo 'BR2_LINUX_KERNEL_CONFIG_FRAGMENT_FILES="$$(BR2_EXTERNAL_WYSE_PATH)/board/wyse/linux.fragment $$(BR2_EXTERNAL_WYSE_PATH)/board/wyse/linux-$(MODEL).fragment"'; \
 	  echo 'BR2_ROOTFS_POST_SCRIPT_ARGS="$(MODEL)"'; \
+	  echo 'BR2_PACKAGE_BUSYBOX_CONFIG_FRAGMENT_FILES="$(BBFRAG)"'; \
 	  echo 'BR2_TARGET_GENERIC_ISSUE="wyse-$(MODEL)"'; } > $(DEFCONFIG) && \
 	$(BRMAKE) defconfig BR2_DEFCONFIG=$(DEFCONFIG)
 
@@ -42,6 +53,7 @@ $(firstword $(GOALS)):
 	@git -C $(BR) apply --reverse --check $(PATCH) 2>/dev/null || \
 		{ echo "Applying $(notdir $(PATCH))"; git -C $(BR) apply $(PATCH); }
 	@trap 'git -C $(BR) apply --reverse $(PATCH)' EXIT; \
+	$(bb_fragment) && \
 	$(if $(filter defconfig,$(GOALS)),$(model_defconfig), \
 	{ [ $(OUT)/.config -nt $(EXT)/configs/wyse_defconfig ] || { $(model_defconfig); }; } && \
 	$(BRMAKE) $(filter-out all,$(GOALS)))

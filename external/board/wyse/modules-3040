@@ -1,5 +1,5 @@
 # Wyse 3040 drivers in the image (besides the system's own, IMAGE_MODULES in
-# post-build.sh). wyse-init loads them at boot (/etc/wyse/modules), also
+# post-build.sh). wyse-init loads them at boot (built into wyse-init), also
 # when the hardware is not plugged in yet, so it works when plugged in later.
 # Kernel settings: linux.fragment and linux-3040.fragment.
 

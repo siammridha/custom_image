@@ -39,6 +39,11 @@ User's rules for the image:
   only some apps need: drivers go into the model's list
   (`external/board/wyse/modules-<model>`), programs into `/data` (Alpine
   packages).
+- Don't add anything to the image only so that scripts outside it (deploy,
+  test) can use it. Those scripts get what they need another way (an
+  argument, the repo, what the device already has). If something is really
+  needed, add it only to development builds; production images never have
+  it.
 
 # Layout
 
@@ -106,7 +111,12 @@ Partitions: p1 EFI/boot (64M at 1M), p2 read-only squashfs root (512M at
   the private root CA in `root_ca.crt` (`ROOT_CA` in `.env` points to it).
 - `./build.sh` or `make MODEL=3040` / `MODEL=5020`. One image per model:
   the Makefile adds `board/wyse/linux-<model>.fragment` to the kernel and
-  passes the model to post-build.sh (written to `/etc/wyse/model`). First
+  passes the model to post-build.sh. Development build: `./build.sh <model>
+  dev` (`make ... DEV=1`) adds the BusyBox commands in
+  `board/wyse/busybox-dev.fragment` (ls, grep, ...); production images
+  don't have them. The host name and the model's drivers are built into
+  wyse-init (`config.rs`); the dropbear key is `/etc/wyse/dropbear_host_key`.
+  Changing `dropbear-localoptions.h` needs `make MODEL=... dropbear-dirclean`. First
   build of a model takes about an hour, later builds minutes. Buildroot
   does not notice kernel fragment changes: run `make MODEL=... linux-reconfigure`.
 - Output is in `/home/vscode/wyse-build/output-<model>`, downloads in
@@ -124,7 +134,8 @@ Partitions: p1 EFI/boot (64M at 1M), p2 read-only squashfs root (512M at
   build fails on a missing host tool, add it there.
 - Kernel modules: only the system's 8 (IMAGE_MODULES in post-build.sh) and
   the model's drivers (`board/wyse/modules-<model>`, with their
-  dependencies) stay in the image; wyse-init loads the model list at boot.
+  dependencies) stay in the image; wyse-init loads the model list at boot
+  (built into it by post-build.sh).
   Only files matching `board/wyse/firmware-<model>` stay in /lib/firmware;
   lines with a package name come from that Alpine package (SOF firmware
   from `sof-firmware`). 5020 has no lists yet.
@@ -133,7 +144,9 @@ Partitions: p1 EFI/boot (64M at 1M), p2 read-only squashfs root (512M at
   No scp on the device; copy with `ssh ... 'cat > file' < file`.
 - Deploy: `scripts/deploy.sh 3040` (keeps `/data`). It writes only p1 and
   p2, so it can't change the partition layout.
-- The image's busybox has no gzip or gunzip: unpack `.tar.gz` files with
+- The image's busybox has no ls, grep, head, sleep, mv, chmod, gzip and more
+  (only what the image uses). Use `alpine <cmd>`; scripts bring Alpine's
+  busybox from the Alpine archive in the download folder. Unpack `.tar.gz` files with
   `alpine tar -xzf - -C <dir> < f.tar.gz`.
 - Built-in sound: SOF driver, card `rt5672`, firmware from Alpine's
   `sof-firmware`. Inside `/data/alpine`, `alsactl` needs `/run/lock`.

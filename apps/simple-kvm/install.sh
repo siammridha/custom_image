@@ -16,35 +16,41 @@ set -eu
 
 REPO=siammridha/simple_kvm
 PORT=3001
-MODEL=$(cat /etc/wyse/model 2>/dev/null || true)
+# The device's model name from the BIOS, e.g. "Wyse 3040 Thin Client".
+NAME=$(cat /sys/class/dmi/id/product_name 2>/dev/null || true)
 A=/data/alpine
 
 [ "$(id -u)" = 0 ] || { echo "Run this as root." >&2; exit 1; }
 # The encoder needs the Intel GPU (i965 VA-API driver): the 3040's.
-[ "$MODEL" = 3040 ] || { echo "Only the Wyse 3040 is supported (this is: ${MODEL:-unknown})." >&2; exit 1; }
+case $NAME in *3040*) ;; *) echo "Only the Wyse 3040 is supported (this is: ${NAME:-unknown})." >&2; exit 1 ;; esac
+# The main system has only the commands it uses itself: the rest of this
+# script runs commands inside Alpine ("alpine <cmd>"), paths there are
+# relative to $A.
 
 echo "Installing packages into $A..."
 alpine apk add --no-cache libva libva-intel-driver libva-utils libgcc
 
+# Does a file matching the pattern exist? (/dev/dri/renderD*)
+exists() { for f; do [ -e "$f" ] && return 0; done; return 1; }
+
 # The GPU driver loads at boot.
 i=0
-while [ $i -lt 10 ] && ! ls /dev/dri/renderD* >/dev/null 2>&1; do sleep 1; i=$((i + 1)); done
-ls /dev/dri/renderD* >/dev/null 2>&1 || { echo "No GPU render device (/dev/dri/renderD*), see dmesg." >&2; exit 1; }
+while [ $i -lt 10 ] && ! exists /dev/dri/renderD*; do alpine sleep 1; i=$((i + 1)); done
+exists /dev/dri/renderD* || { echo "No GPU render device (/dev/dri/renderD*), see dmesg." >&2; exit 1; }
 
 # The app has no software encoder: it will not start without this.
-if alpine vainfo 2>&1 | grep -q 'VAProfileH264ConstrainedBaseline.*VAEntrypointEncSlice'; then
+if alpine sh -c "vainfo 2>&1 | grep -q 'VAProfileH264ConstrainedBaseline.*VAEntrypointEncSlice'"; then
 	echo "GPU reports H.264 encode support."
 else
 	echo "Warning: vainfo did not report H.264 encode; the app may not start." >&2
 fi
-ls /dev/video* >/dev/null 2>&1 || echo "Note: no capture card plugged in yet (fine, the app starts without it)."
-ls /dev/ttyUSB* >/dev/null 2>&1 || echo "Note: no CH9329 serial adapter plugged in yet (fine)."
+exists /dev/video* || echo "Note: no capture card plugged in yet (fine, the app starts without it)."
+exists /dev/ttyUSB* || echo "Note: no CH9329 serial adapter plugged in yet (fine)."
 
 echo "Downloading the latest release of $REPO..."
 mkdir -p "$A/usr/local/bin"
 alpine wget -qO /usr/local/bin/simple_kvm.new "https://github.com/$REPO/releases/latest/download/simple_kvm"
-chmod 755 "$A/usr/local/bin/simple_kvm.new"
-mv "$A/usr/local/bin/simple_kvm.new" "$A/usr/local/bin/simple_kvm"
+alpine sh -c 'chmod 755 /usr/local/bin/simple_kvm.new && mv /usr/local/bin/simple_kvm.new /usr/local/bin/simple_kvm'
 
 cat > "$A/etc/init.d/simple_kvm" <<EOF
 #!/sbin/openrc-run
@@ -72,7 +78,7 @@ start_pre() {
 	return 0
 }
 EOF
-chmod 755 "$A/etc/init.d/simple_kvm"
+alpine chmod 755 /etc/init.d/simple_kvm
 echo 'export RUST_LOG=info' > "$A/etc/conf.d/simple_kvm"
 
 alpine rc-update add simple_kvm default >/dev/null

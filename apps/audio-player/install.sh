@@ -14,12 +14,16 @@
 set -eu
 
 REPO=siammridha/audio_player
-MODEL=$(cat /etc/wyse/model 2>/dev/null || true)
+# The device's model name from the BIOS, e.g. "Wyse 3040 Thin Client".
+NAME=$(cat /sys/class/dmi/id/product_name 2>/dev/null || true)
 A=/data/alpine
 
 [ "$(id -u)" = 0 ] || { echo "Run this as root." >&2; exit 1; }
 # The built-in sound setup below (SOF driver, rt5672 card) is the 3040's.
-[ "$MODEL" = 3040 ] || { echo "Only the Wyse 3040 is supported (this is: ${MODEL:-unknown})." >&2; exit 1; }
+case $NAME in *3040*) ;; *) echo "Only the Wyse 3040 is supported (this is: ${NAME:-unknown})." >&2; exit 1 ;; esac
+# The main system has only the commands it uses itself: the rest of this
+# script runs commands inside Alpine ("alpine <cmd>"), paths there are
+# relative to $A.
 
 echo "Installing packages into $A..."
 alpine apk add --no-cache alsa-lib libgcc alsa-utils
@@ -27,8 +31,7 @@ alpine apk add --no-cache alsa-lib libgcc alsa-utils
 echo "Downloading the latest release of $REPO..."
 mkdir -p "$A/usr/local/bin"
 alpine wget -qO /usr/local/bin/audio-player.new "https://github.com/$REPO/releases/latest/download/audio-player"
-chmod 755 "$A/usr/local/bin/audio-player.new"
-mv "$A/usr/local/bin/audio-player.new" "$A/usr/local/bin/audio-player"
+alpine sh -c 'chmod 755 /usr/local/bin/audio-player.new && mv /usr/local/bin/audio-player.new /usr/local/bin/audio-player'
 mkdir -p "$A/var/lib/audio-player/audio"
 
 cat > "$A/etc/init.d/audio-player" <<EOF
@@ -62,13 +65,13 @@ start_pre() {
 	alsactl restore 2>/dev/null || true
 }
 EOF
-chmod 755 "$A/etc/init.d/audio-player"
+alpine chmod 755 /etc/init.d/audio-player
 echo 'export RUST_LOG=error' > "$A/etc/conf.d/audio-player"
 
 # The card is needed to set up the headphone output below.
 i=0
-while [ $i -lt 20 ] && ! grep -q rt5672 /proc/asound/cards; do sleep 1; i=$((i + 1)); done
-grep -q rt5672 /proc/asound/cards || echo "Warning: built-in sound card not found (see dmesg)." >&2
+while [ $i -lt 20 ] && ! alpine grep -q rt5672 /proc/asound/cards; do alpine sleep 1; i=$((i + 1)); done
+alpine grep -q rt5672 /proc/asound/cards || echo "Warning: built-in sound card not found (see dmesg)." >&2
 
 # The Wyse 3040's headphone jack (rt5670 codec) boots with its internal
 # output routing switched off. Saved with alsactl, restored by the service.

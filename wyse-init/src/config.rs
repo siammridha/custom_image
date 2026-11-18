@@ -1,13 +1,24 @@
 //! Settings, all fixed in the image (build a new image to change them):
-//!   - host name: /etc/hostname (baked from keys/device.hostname)
 //!   - NetBird setup key and Tailscale auth key: files in /etc/wyse, root
 //!     only (from .env). NetBird and Tailscale read them themselves, so the
 //!     keys are never on a command line, where apps could read them
 //!   - everything else: below, in this program
 //! Files are read from /rom, the read-only image, so a change in RAM is not
 //! used.
-use std::fs;
 use std::path::Path;
+
+/// The host name, from keys/device.hostname at build time.
+pub const HOSTNAME: &str = match option_env!("WYSE_HOSTNAME") {
+    Some(v) if !v.is_empty() => v,
+    _ => "localhost",
+};
+
+/// The model's drivers (board/wyse/modules-<model>), from the build. Loaded
+/// at boot, also when the hardware is not plugged in yet.
+pub const MODULES: &str = match option_env!("WYSE_MODULES") {
+    Some(v) => v,
+    None => "",
+};
 
 /// NetBird's management server, from .env at build time (NETBIRD_URL, or
 /// https://HOST_DOMAIN:4478). Empty: NetBird's default.
@@ -47,11 +58,4 @@ pub fn nb_key_file() -> Option<String> {
 /// Tailscale auth key file, if the image has one.
 pub fn ts_key_file() -> Option<String> {
     Some(image_file("/etc/wyse/tailscale.key")).filter(|f| Path::new(f).exists())
-}
-
-/// The host name; "localhost" when missing.
-pub fn hostname() -> String {
-    let h = fs::read_to_string(image_file("/etc/hostname")).unwrap_or_default();
-    let h = h.trim();
-    if h.is_empty() { "localhost" } else { h }.to_string()
 }

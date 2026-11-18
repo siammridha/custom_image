@@ -3,6 +3,9 @@
 #
 #   ./build.sh            asks for the model
 #   ./build.sh 3040       no question
+#   ./build.sh 3040 dev   development build: extra BusyBox commands for
+#                         scripts and SSH (busybox-dev.fragment). Never for
+#                         a device at a site.
 #
 # The full log goes to build.log. The first build of a model takes about an
 # hour; later builds only redo what changed.
@@ -10,6 +13,11 @@ set -eu
 cd "$(dirname "$0")"
 
 MODEL=${1:-}
+case ${2:-} in
+	"") DEV= ;;
+	dev) DEV=1 ;;
+	*) echo "usage: $0 [3040|5020] [dev]" >&2; exit 1 ;;
+esac
 while :; do
 	case $MODEL in
 		3040|5020) break ;;
@@ -37,9 +45,9 @@ while ! grep -qE '^[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?$' $H 2>/dev/null;
 	echo "$h" > $H
 done
 
-echo "Building the Wyse $MODEL image (log: build.log)..."
+echo "Building the Wyse $MODEL ${DEV:+development }image (log: build.log)..."
 start=$(date +%s)
-make MODEL=$MODEL > build.log 2>&1 &
+make MODEL=$MODEL DEV=$DEV > build.log 2>&1 &
 BUILD=$!
 # Progress bar (scripts/build-progress.sh) once the config exists.
 O=/home/vscode/wyse-build/output-$MODEL

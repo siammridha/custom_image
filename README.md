@@ -35,7 +35,7 @@ a copy of both files: without them the device gets new VPN identities.
 
 - New device: write `disk.img` to its eMMC.
 - Running device: `scripts/deploy.sh <model> [ip]`. Keeps `/data`. Refuses
-  if the device runs the other model's image.
+  if the device's BIOS model name is not that model.
 
 ## Alpine subsystem
 

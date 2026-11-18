@@ -15,7 +15,7 @@ use std::fs;
 const NB_LOG: &str = "/var/log/netbird/client.log";
 
 struct Guard {
-    hostname: String,
+    hostname: &'static str,
 }
 
 impl Guard {
@@ -36,7 +36,7 @@ impl Guard {
         // --network-monitor (off by default on Linux): reconnect as soon as
         // the default route changes, not after its server connection times
         // out (up to 40 s, then retries up to 15 s apart).
-        let mut a = vec!["up".to_string(), "--network-monitor".into(), "--hostname".into(), self.hostname.clone()];
+        let mut a = vec!["up".to_string(), "--network-monitor".into(), "--hostname".into(), self.hostname.into()];
         // NetBird reads the key from the file (client/cmd/root.go
         // getSetupKeyFromFile), so it is not on the command line.
         if let Some(f) = config::nb_key_file() {
@@ -109,7 +109,7 @@ fn trim_logs() {
 
 pub fn main() -> ! {
     sys::log_open(c"vpn-guard");
-    let g = Guard { hostname: config::hostname() };
+    let g = Guard { hostname: config::HOSTNAME };
 
     let t = sys::uptime();
     let (mut nb_last, mut nb_restart, mut nb_done) = (t, t, false);

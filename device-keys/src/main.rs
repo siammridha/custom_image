@@ -152,7 +152,7 @@ fn main() {
     f.extend_from_slice(&64u32.to_be_bytes());
     f.extend_from_slice(&key.to_bytes());
     f.extend_from_slice(&public);
-    write(&format!("{t}/etc/wyse/dropbear/dropbear_ed25519_host_key"), &f);
+    write(&format!("{t}/etc/wyse/dropbear_host_key"), &f);
 
     let mut blob = ssh_string(b"ssh-ed25519");
     blob.extend(ssh_string(&public));

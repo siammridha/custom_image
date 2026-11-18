@@ -5,9 +5,10 @@ T=${1:?target dir missing}
 MODEL=${2:?model missing (build with: make MODEL=3040 or MODEL=5020)}
 B=$(dirname "$0")
 
-# Which model this image is for (install scripts check it).
 mkdir -p "$T/etc/wyse"
-echo "$MODEL" > "$T/etc/wyse/model"
+# Old images had these files; their contents are now built into wyse-init
+# (Buildroot keeps old target files).
+rm -f "$T/etc/wyse/model" "$T/etc/wyse/modules" "$T/etc/hostname"
 
 # Mount points used by /sbin/preinit.
 rm -rf "$T/persist"
@@ -23,11 +24,21 @@ ip=$(get HOST_IP); dom=$(get HOST_DOMAIN)
 NB_URL=$(get NETBIRD_URL)
 [ -z "$NB_URL" ] && [ -n "$dom" ] && NB_URL=https://$dom:4478
 
+# The device's host name (keys/device.hostname, asked by build.sh).
+K=$B/../../../keys
+H=$(cat "$K/device.hostname" 2>/dev/null || true)
+echo "$H" | grep -qE '^[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?$' ||
+	{ echo "keys/device.hostname: missing or not a valid host name (build with ./build.sh)"; exit 1; }
+# The model's drivers (modules-<model>), loaded by wyse-init at boot.
+ML=$B/modules-$MODEL
+MODS=$( [ ! -f "$ML" ] || grep -v '^#' "$ML" | tr -s ' \t\n' '   ')
+
 # wyse-init: preinit, boot, services, vpn-guard, apps setup and the DHCP
-# lease handler, in one Rust program (no boot scripts). The NetBird
-# management URL is built into it (wyse-init/src/config.rs).
+# lease handler, in one Rust program (no boot scripts). The host name, the
+# model's drivers and the NetBird management URL are built into it
+# (wyse-init/src/config.rs).
 WI=$B/../../../wyse-init
-WYSE_NB_MANAGEMENT_URL=$NB_URL \
+WYSE_NB_MANAGEMENT_URL=$NB_URL WYSE_HOSTNAME=$H WYSE_MODULES=$MODS \
 CARGO_TARGET_X86_64_UNKNOWN_LINUX_MUSL_LINKER=$HOST_DIR/bin/x86_64-buildroot-linux-musl-gcc \
 	cargo build -q --release --target x86_64-unknown-linux-musl \
 	--manifest-path "$WI/Cargo.toml" --target-dir "$BUILD_DIR/wyse-init"
@@ -69,13 +80,47 @@ echo "alpine-minirootfs: $AF"
 # Made into the image's archive further down (alpine-root.sh), once the
 # private root CA is known.
 
-# The device's host name (keys/device.hostname, asked by build.sh).
-K=$B/../../../keys
-H=$(cat "$K/device.hostname" 2>/dev/null || true)
-echo "$H" | grep -qE '^[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?$' ||
-	{ echo "keys/device.hostname: missing or not a valid host name (build with ./build.sh)"; exit 1; }
-echo "$H" > "$T/etc/hostname"
 rm -f "$T/usr/sbin/set-hostname"  # old images had it; Buildroot keeps old files
+
+# Login banner, shown by dropbear and by login (NetBird and Tailscale SSH).
+# A development build (BusyBox's fragment not empty, see the Makefile) says
+# so.
+L=' -----------------------------------------------------'
+# Terminal color codes: R reset; G green, Y yellow, C cyan, D grey,
+# W red.
+E=$(printf '\033')
+R="$E[0m"; G="$E[1;32m"; Y="$E[33m"; C="$E[1;36m"; D="$E[90m"; W="$E[1;31m"
+{
+	echo
+	# The logo: shades of blue, light at the top to dark at the bottom
+	# (256-color codes).
+	set -- 117 111 75 69 33 27
+	while IFS= read -r l; do
+		printf '%s[1;38;5;%sm%s%s\n' "$E" "$1" "$l" "$R"
+		shift
+	done <<'EOF'
+__        __
+\ \      / /   _ ___  ___
+ \ \ /\ / / | | / __|/ _ \
+  \ V  V /| |_| \__ \  __/
+   \_/\_/  \__, |___/\___|
+           |___/
+EOF
+	echo "$D$L$R"
+	echo " ${G}Wyse $MODEL$R, built $(date +%Y-%m-%d)"
+	echo " Linux $(ls "$T/lib/modules"), Buildroot $(sed -n 's/^VERSION_ID=//p' "$T/etc/os-release")"
+	echo "$D$L$R"
+	echo " The system is read-only and starts fresh at every boot."
+	echo " Only the ${C}/data$R partition is mutable."
+	echo " Software: ${Y}alpine apk add <package>$R   Apps: ${Y}alpine rc-status$R"
+	echo "$D$L$R"
+	if [ -s "$BASE_DIR/busybox-build.fragment" ]; then
+		echo "$W=== WARNING! =========================================$R"
+		echo " Development build: has extra commands for testing."
+		echo " Do not install it on a device at a site."
+		echo "$D$L$R"
+	fi
+} > "$T/etc/motd"
 
 # VPN and SSH keys: computed from the device's secret (keys/device.secret)
 # and baked into the image, so they are the same after every boot.
@@ -90,10 +135,9 @@ cargo run -q --release --manifest-path "$B/../../../device-keys/Cargo.toml" \
 # Kernel modules: the system's own (IMAGE_MODULES) and the model's drivers
 # (modules-<model>), each with every module it needs. The kernel builds
 # more drivers than that for both models; the rest are removed. wyse-init
-# loads the model's drivers at boot (/etc/wyse/modules).
+# loads the model's drivers at boot.
 IMAGE_MODULES="efivarfs nf_log_syslog softdog x86_pkg_temp_thermal
 	xt_LOG xt_MASQUERADE xt_addrtype xt_mark"
-ML=$B/modules-$MODEL
 KREL=$(ls "$T/lib/modules")
 M=$T/lib/modules/$KREL
 "$HOST_DIR/sbin/depmod" -b "$T" "$KREL"
@@ -112,11 +156,6 @@ find "$M" -name '*.ko*' | while read -r f; do
 done
 find "$M" -type d -empty -delete
 "$HOST_DIR/sbin/depmod" -b "$T" "$KREL"
-if [ -f "$ML" ]; then
-	grep -v '^#' "$ML" | grep . > "$T/etc/wyse/modules"
-else
-	rm -f "$T/etc/wyse/modules"
-fi
 
 # Firmware: with a list for the model (firmware-<model>), only the files on
 # it stay in /lib/firmware. Files from an Alpine package come from the same

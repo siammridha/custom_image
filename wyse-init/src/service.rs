@@ -46,7 +46,7 @@ pub fn main(name: &str) {
             sys::umask(0o077);
             // No password logins: built without them (dropbear-localoptions.h).
             // The host key is baked into the image (device-keys).
-            start(-10, "dropbear", &["-F", "-r", "/etc/wyse/dropbear/dropbear_ed25519_host_key"]);
+            start(-10, "dropbear", &["-F", "-r", "/etc/wyse/dropbear_host_key"]);
         }
         "ntpd" => {
             // The NTP servers from the DHCP lease (option 42, saved by
