@@ -122,6 +122,12 @@ EOF
 	fi
 } > "$T/etc/motd"
 
+# Development builds: a root shell on the monitor (tty1), no
+# password (root has none). The overlay copies inittab fresh each build.
+if [ -s "$BASE_DIR/busybox-build.fragment" ]; then
+	echo 'tty1::respawn:/bin/login -f root' >> "$T/etc/inittab"
+fi
+
 # VPN and SSH keys: computed from the device's secret (keys/device.secret)
 # and baked into the image, so they are the same after every boot.
 mkdir -p "$T/var/lib"
