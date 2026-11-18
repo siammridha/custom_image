@@ -35,17 +35,16 @@ model_defconfig = mkdir -p $(OUT) && \
 .PHONY: $(GOALS)
 $(firstword $(GOALS)):
 	@# buildroot/ is a git submodule (Buildroot 2026.08.2, unchanged). Our
-	@# edits to it are in patches/buildroot-wyse.patch, applied once here.
+	@# edits to it are in patches/buildroot-wyse.patch: applied here before
+	@# Buildroot runs and taken out again when it ends (also when it fails),
+	@# so buildroot/ shows no changes between builds.
 	@test -f $(BR)/Makefile || git -C $(CURDIR) submodule update --init buildroot
 	@git -C $(BR) apply --reverse --check $(PATCH) 2>/dev/null || \
 		{ echo "Applying $(notdir $(PATCH))"; git -C $(BR) apply $(PATCH); }
-ifeq ($(GOALS),defconfig)
-	$(model_defconfig)
-else
-	@# (Re)make the config when missing or older than wyse_defconfig.
-	@[ $(OUT)/.config -nt $(EXT)/configs/wyse_defconfig ] || { $(model_defconfig); }
-	$(BRMAKE) $(filter-out all,$(GOALS))
-endif
+	@trap 'git -C $(BR) apply --reverse $(PATCH)' EXIT; \
+	$(if $(filter defconfig,$(GOALS)),$(model_defconfig), \
+	{ [ $(OUT)/.config -nt $(EXT)/configs/wyse_defconfig ] || { $(model_defconfig); }; } && \
+	$(BRMAKE) $(filter-out all,$(GOALS)))
 
 $(wordlist 2,99,$(GOALS)):
 	@:
