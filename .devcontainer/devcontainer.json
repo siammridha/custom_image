@@ -66,6 +66,14 @@
             "source": "${localEnv:HOME}/.gitconfig",
             "target": "/home/vscode/.gitconfig",
             "type": "bind"
+        },
+        // The Mac's time zone, so the container shows local time (Docker's
+        // VM uses UTC). Read-only: the container can't change the Mac's file.
+        {
+            "source": "/etc/localtime",
+            "target": "/etc/localtime",
+            "type": "bind",
+            "readonly": true
         }
     ],
 
