@@ -4,6 +4,8 @@ keys/*
 !keys/README
 external/board/wyse/authorized_keys
 root_ca.crt
+# NetBird server config (setup key, relay secret, store key)
+netbird_server_config/
 
 # Build output and logs
 build.log
