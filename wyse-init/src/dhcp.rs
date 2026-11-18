@@ -6,6 +6,7 @@
 //!   bound / renew  set address, routes and DNS from the lease
 //! udhcpc passes the lease in environment variables.
 use crate::net::{self, Route};
+use crate::prio;
 use std::env;
 use std::fs;
 use std::net::Ipv4Addr;
@@ -47,6 +48,7 @@ fn report(what: &str, r: std::io::Result<()>) {
 
 fn bound(iface: &str) {
     let Some(addr) = ip("ip") else { return };
+    prio::qdisc(iface);
     report("address", net::set_addr(iface, addr, ip("broadcast"), ip("subnet")));
 
     // RFC 3442: with classless static routes, the router option is ignored.

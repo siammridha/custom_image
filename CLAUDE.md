@@ -71,6 +71,12 @@ Partitions: p1 EFI/boot (64M at 1M), p2 read-only squashfs root (512M at
   sysinit/boot/default` in the chroot (no Alpine init, no PID namespace) and
   `openrc shutdown` at shutdown (`wyse-init stop-apps`). Use
   `alpine rc-status`, `alpine rc-service <name> restart`.
+- Priorities (`wyse-init/src/prio.rs`): cgroup `vpn` (SSH, VPNs, watchdog,
+  ntpd, vpn-guard) has the highest cpu and io weight and memory.min 128M;
+  cgroup `apps` has weight 1, memory.max = RAM - 256M, pids.max 4096.
+  iocost is turned on for the disk. Each interface gets a 2-band `prio`
+  qdisc; an nftables rule (table `ip wyse`) puts traffic from `apps` in the
+  low band.
 - `/etc/wyse/vpn.conf` is locked: values come from `.env` at build time.
 
 # Build

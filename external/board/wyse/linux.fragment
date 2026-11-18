@@ -72,6 +72,11 @@ CONFIG_NFT_SOCKET=y
 CONFIG_NFT_REJECT=y
 CONFIG_NFT_REJECT_IPV4=y
 
+# Network priority (wyse-init prio.rs): a "prio" queue on each network
+# interface; an nftables rule (socket cgroupv2, meta priority set) sends
+# app packets to its low band.
+CONFIG_NET_SCH_PRIO=y
+
 # Watchdog: the hardware reboots the device if the system freezes. The
 # model's own watchdog driver is in linux-<model>.fragment; i6300esb = QEMU.
 # softdog is a module, loaded only when no hardware watchdog was found.

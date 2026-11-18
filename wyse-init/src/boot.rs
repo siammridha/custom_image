@@ -3,6 +3,7 @@
 //! image: /etc/hosts, root's SSH keys and the mounts are in the image.
 use crate::config::Config;
 use crate::net;
+use crate::prio;
 use crate::sys;
 use std::collections::BTreeSet;
 use std::fs::{self, DirBuilder};
@@ -12,6 +13,7 @@ use std::path::Path;
 pub fn main() {
     std::env::set_var("PATH", "/usr/sbin:/usr/bin:/sbin:/bin");
     let c = Config::load();
+    prio::setup();
     persist_dirs();
     coldplug();
     hostname(&c);

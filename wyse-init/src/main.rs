@@ -18,6 +18,7 @@ mod dhcp;
 mod guard;
 mod net;
 mod preinit;
+mod prio;
 mod service;
 mod sys;
 

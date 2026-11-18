@@ -1,11 +1,11 @@
 //! `wyse-init run <service>`: runs one service in the foreground for init
 //! (respawn). When it exits, init starts it again.
 //!   - never killed when RAM runs out (oom_score_adj -1000), except apps
-//!   - remote access gets a higher CPU priority than apps (nice -10)
+//!   - in the vpn cgroup: top priority over the apps (prio.rs)
 //! A service that is turned off in the settings just waits, so init does
 //! not keep restarting it.
 use crate::config::Config;
-use crate::{alpine, guard, sys};
+use crate::{alpine, guard, prio, sys};
 use std::fs;
 use std::os::unix::process::CommandExt;
 use std::path::Path;
@@ -18,6 +18,9 @@ pub fn main(name: &str) {
     // Slow down restarts if a service keeps exiting at once.
     sys::sleep(2);
     sys::put("/proc/self/oom_score_adj", "-1000");
+    if name != "apps" {
+        prio::join_vpn();
+    }
     let _ = sys::stdio_to("/dev/null");
 
     match name {
