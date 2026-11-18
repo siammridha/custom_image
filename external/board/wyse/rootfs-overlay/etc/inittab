@@ -11,8 +11,9 @@ null::sysinit:/bin/ln -sf /proc/self/fd/1 /dev/stdout
 null::sysinit:/bin/ln -sf /proc/self/fd/2 /dev/stderr
 ::sysinit:/sbin/wyse-init boot
 
-# Logs (in RAM).
-::respawn:/sbin/syslogd -n
+# Logs on /data (kept across reboots): at 512 KB messages becomes
+# messages.0, so at most about 1 MB.
+::respawn:/sbin/syslogd -n -O /data/log/messages -s 512 -b 1
 ::respawn:/sbin/klogd -n
 
 # Remote access. init starts these after boot and starts them again

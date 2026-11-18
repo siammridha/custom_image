@@ -174,7 +174,7 @@ fn wait_running() {
         }
         sys::sleep(1);
     }
-    eprintln!("alpine: the Alpine subsystem is not running (see /var/log/messages)");
+    eprintln!("alpine: the Alpine subsystem is not running (see /data/log/messages)");
     exit(1);
 }
 

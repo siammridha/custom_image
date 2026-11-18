@@ -81,7 +81,7 @@ echo "#### reboot"
 S reboot; waitup
 S 'alpine rc-status | grep -E "simple_kvm|audio-player"; alpine pidof simple_kvm audio-player
 echo "--- cleanup"; [ -d /data/alpine.bad ] && mkdir -p /data/alpine/root/del && mv /data/alpine.bad /data/alpine/root/del/ && alpine rm -rf /root/del; echo /data/* /data/alpine/root/*
-grep -ihE "not found|alpine:" /var/log/messages | grep -v WQBC | grep -v iptables'
+grep -ihE "not found|alpine:" /data/log/messages | grep -v WQBC | grep -v iptables'
 
 echo "#### private CA"
 S "ls /data/alpine/usr/local/share/ca-certificates

@@ -146,6 +146,14 @@ IMAGE_MODULES="efivarfs nf_log_syslog softdog x86_pkg_temp_thermal
 	xt_LOG xt_MASQUERADE xt_addrtype xt_mark"
 KREL=$(ls "$T/lib/modules")
 M=$T/lib/modules/$KREL
+# Development builds: test_lockup (freezes the CPUs, for testing the
+# watchdog). Copied from the kernel build: a production build removed it
+# from the target, and Buildroot does not install the modules again.
+if [ -s "$BASE_DIR/busybox-build.fragment" ]; then
+	mkdir -p "$M/extra"
+	cp "$BUILD_DIR/linux-$KREL/lib/test_lockup.ko" "$M/extra/"
+	IMAGE_MODULES="$IMAGE_MODULES test_lockup"
+fi
 "$HOST_DIR/sbin/depmod" -b "$T" "$KREL"
 { echo "$IMAGE_MODULES"; [ ! -f "$ML" ] || grep -v '^#' "$ML"; } |
 	tr -s ' \t' '\n\n' | grep . | tr - _ > "$BUILD_DIR/wyse-modules.want"

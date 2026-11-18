@@ -45,7 +45,7 @@ is never reached on this device.
 | busybox mount | `/etc/filesystems` | Only for `mount` without `-t`; falls back to `/proc/filesystems` |
 | busybox init | `/etc/init.d/rcS` | Only used when there is no `/etc/inittab` |
 | busybox modprobe | `/etc/modprobe.conf`, `/etc/modprobe.d` | Optional module options. Put a file there if a driver needs options. |
-| syslogd | `/var/log/messages` | `/var/log` links to `/tmp`; made at runtime |
+| syslogd | `/var/log/messages` | Moved to `/data/log/messages` (`-O` in inittab), kept across reboots, at most about 1 MB (`-s 512 -b 1`) |
 | libuuid | `/var/lib/libuuid/clock*.txt` | Only for time-based UUIDs; mke2fs uses random ones |
 | libblkid | `/etc/blkid.conf`, `/etc/blkid.tab`, `/run/blkid/` | Optional settings and cache, made at runtime if needed |
 | libblkid | `dmsetup`, `lvdisplay` | Only for LVM disks |

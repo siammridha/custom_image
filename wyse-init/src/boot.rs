@@ -12,9 +12,56 @@ use std::path::Path;
 pub fn main() {
     std::env::set_var("PATH", "/usr/sbin:/usr/bin:/sbin:/bin");
     prio::setup();
+    logs();
     coldplug();
     hostname();
     network();
+}
+
+/// syslogd writes to /data/log (inittab). If /data is not mounted, the
+/// folder is in RAM and logging still works. Kernel crash records that
+/// pstore kept in EFI variables (the last messages before a panic) are
+/// moved there; deleting them frees the BIOS's space for the next crash.
+fn logs() {
+    let dir = "/data/log";
+    let _ = fs::create_dir_all(dir);
+    if !sys::mounted("/data") || sys::mount_fs("pstore", "/sys/fs/pstore", "pstore", 0, "").is_err() {
+        return;
+    }
+    // The kernel splits one crash into 1 KB records, "Panic#1 Part1" being
+    // the end. Joined into one file, oldest part first.
+    let mut parts: Vec<(u32, String, std::path::PathBuf)> = Vec::new();
+    if let Ok(rd) = fs::read_dir("/sys/fs/pstore") {
+        for e in rd.flatten() {
+            if let Ok(t) = fs::read_to_string(e.path()) {
+                parts.push((part_no(&t), t, e.path()));
+            }
+        }
+    }
+    if parts.is_empty() {
+        let _ = sys::umount("/sys/fs/pstore");
+        return;
+    }
+    parts.sort_by(|a, b| b.0.cmp(&a.0));
+    let text: String = parts.iter().map(|p| p.1.as_str()).collect();
+    // pstore gives each record the time of the crash (Unix seconds).
+    let when = fs::metadata(&parts[0].2)
+        .and_then(|m| m.modified())
+        .ok()
+        .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+        .map_or(0, |d| d.as_secs());
+    let to = format!("{dir}/crash-{when}");
+    if fs::write(&to, text).is_ok() {
+        for p in &parts {
+            let _ = fs::remove_file(&p.2);
+        }
+    }
+    let _ = sys::umount("/sys/fs/pstore");
+}
+
+/// "Panic#1 Part3\n..." -> 3.
+fn part_no(record: &str) -> u32 {
+    record.lines().next().and_then(|l| l.rsplit("Part").next()).and_then(|n| n.trim().parse().ok()).unwrap_or(0)
 }
 
 /// Load the kernel modules for the hardware found at boot: every `modalias`
@@ -77,5 +124,17 @@ fn network() {
         // built-in default script (busybox.config), so no -s. -O ntpsrv
         // asks the router for its NTP servers.
         sys::run("udhcpc", &["-b", "-S", "-O", "ntpsrv", "-i", i]);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn part() {
+        assert_eq!(part_no("Panic#1 Part11\n<4>[ 43.7] RIP"), 11);
+        assert_eq!(part_no("Oops#2 Part1\n"), 1);
+        assert_eq!(part_no(""), 0);
     }
 }

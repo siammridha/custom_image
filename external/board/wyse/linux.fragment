@@ -125,3 +125,12 @@ CONFIG_USB_SERIAL_CH341=m
 # CONFIG_RFKILL is not set
 # Old IDE-style disk controllers
 # CONFIG_ATA_SFF is not set
+# Kernel crash messages kept across a reboot in EFI variables (pstore);
+# wyse-init boot moves them to /data/log
+CONFIG_PSTORE=y
+# CONFIG_PSTORE_COMPRESS is not set
+CONFIG_EFI_VARS_PSTORE=y
+# Test module that freezes the CPUs (for the watchdog test). Built always,
+# so switching between dev and production builds needs no kernel rebuild;
+# only development images have it (post-build.sh)
+CONFIG_TEST_LOCKUP=m

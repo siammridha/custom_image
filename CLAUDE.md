@@ -77,6 +77,9 @@ Partitions: p1 EFI/boot (64M at 1M), p2 read-only squashfs root (512M at
   (made if missing); the host name is `keys/device.hostname` (`build.sh`
   asks). One image per device. Tailscale logs in again at every boot with
   `TAILSCALE_KEY`, so that key must be reusable and not expire.
+- Logs: syslogd writes `/data/log/messages` (kept across reboots, about
+  1 MB at most). After a kernel panic, wyse-init boot saves the panic
+  text that pstore kept in EFI variables to `/data/log/crash-<time>`.
 - `/data` keeps apps and `/data/alpine` (an Alpine root: `alpine apk add ...`,
   `alpine <cmd>` runs a command in it). It is a separate subsystem with its
   own busybox (Alpine's); the system's `/bin/busybox` has only the commands
@@ -114,7 +117,8 @@ Partitions: p1 EFI/boot (64M at 1M), p2 read-only squashfs root (512M at
   passes the model to post-build.sh. Development build: `./build.sh <model>
   dev` (`make ... DEV=1`) adds the BusyBox commands in
   `board/wyse/busybox-dev.fragment` (ls, grep, ...), a root shell on the
-  monitor (tty1, no password) and all boot messages on it (no `quiet`);
+  monitor (tty1, no password), all boot messages on it (no `quiet`) and
+  the `test_lockup` module (freezes the CPUs, to test the watchdog);
   production images don't have these. The host name and the model's drivers are built into
   wyse-init (`config.rs`); the dropbear key is `/etc/wyse/dropbear_host_key`.
   Changing `dropbear-localoptions.h` needs `make MODEL=... dropbear-dirclean`. First
