@@ -21,8 +21,8 @@ use std::process::Command;
 /// What may stay on /persist; everything else is removed at every boot.
 /// Kept: the NetBird and Tailscale keys (same VPN IPs), what lets Tailscale
 /// start while its server is unreachable (relay list, device list of each
-/// login in tailscaled.state), the SSH host keys, the settings written by
-/// setup-os, the wipe-data request (read later in this boot) and lost+found
+/// login in tailscaled.state), the SSH host keys, the host name (written by
+/// set-hostname), the wipe-data request (read later in this boot) and lost+found
 /// (e2fsck would make it again). The programs make the rest again when they
 /// start.
 const KEEP: &[&str] = &[
@@ -32,7 +32,7 @@ const KEEP: &[&str] = &[
     "tailscale/profile-data", // only the logins tailscaled.state lists
     "tailscale/ssh",
     "dropbear",
-    "wyse.conf",
+    "hostname",
     ".wipe-data",
     "lost+found",
 ];
@@ -176,6 +176,7 @@ fn run() -> Result<Infallible, String> {
         .map_err(|e| format!("mount persist: {e}"))?;
 
     // Remove anything else that built up on persist.
+    crate::config::move_old_hostname();
     clean_persist(Path::new("/persist"), "");
     sys::sync();
 

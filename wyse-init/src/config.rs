@@ -1,18 +1,34 @@
-//! Settings, read in the same order the old load-config script used:
-//! built-in defaults, then /persist/wyse.conf, then the locked VPN settings
-//! from the read-only image (always last, so nothing can override them).
-//! Lines are `KEY=value`, `KEY="value"` or `KEY='value'`; `#` starts a comment.
+//! Settings: HOSTNAME from /persist/hostname (written by set-hostname;
+//! "localhost" when missing) and the locked VPN settings from the read-only
+//! image. In vpn.conf, lines are `KEY=value`, `KEY="value"` or `KEY='value'`; `#` starts a comment.
 use std::collections::HashMap;
 use std::fs;
 use std::path::Path;
 
 pub struct Config(HashMap<String, String>);
 
+const HOSTNAME_FILE: &str = "/persist/hostname";
+
+/// Devices set up before /persist/hostname: keep the name from the old
+/// /persist/wyse.conf (preinit removes that file, it is not in KEEP).
+pub fn move_old_hostname() {
+    if Path::new(HOSTNAME_FILE).exists() {
+        return;
+    }
+    let mut c = Config(HashMap::new());
+    c.read("/persist/wyse.conf");
+    let h = c.get("HOSTNAME");
+    if !h.is_empty() {
+        let _ = fs::write(HOSTNAME_FILE, format!("{h}\n"));
+    }
+}
+
 impl Config {
     pub fn load() -> Config {
         let mut c = Config(HashMap::new());
-        c.read("/etc/wyse/wyse.conf");
-        c.read("/persist/wyse.conf");
+        let h = fs::read_to_string(HOSTNAME_FILE).unwrap_or_default();
+        let h = if h.trim().is_empty() { "localhost" } else { h.trim() };
+        c.0.insert("HOSTNAME".into(), h.into());
         if Path::new("/rom/etc/wyse/vpn.conf").exists() {
             c.read("/rom/etc/wyse/vpn.conf");
         } else {

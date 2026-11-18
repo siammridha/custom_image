@@ -61,7 +61,8 @@ User's rules for the image:
 Partitions: p1 EFI/boot (64M at 1M), p2 read-only squashfs root (512M at
 65M), p3 `/persist` (128M), p4 overlay/`/data`.
 - The overlay is in RAM: every boot starts fresh from the image.
-- `/persist` keeps the VPN identities, dropbear host keys and `wyse.conf`.
+- `/persist` keeps the VPN identities, dropbear host keys and `hostname`
+  (set with `set-hostname`).
 - `/data` keeps apps and `/data/alpine` (an Alpine root: `alpine apk add ...`,
   `alpine <cmd>` runs a command in it). It is a separate subsystem with its
   own busybox (Alpine's); the system's `/bin/busybox` has only the commands

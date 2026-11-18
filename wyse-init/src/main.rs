@@ -7,7 +7,7 @@
 //!                                   drivers, host name, network, SSH keys
 //!   wyse-init run <service>         from inittab (respawn): starts one service
 //!   wyse-init stop-apps             from inittab at shutdown: stops the apps
-//!   wyse-init hostname              apply the host name again (setup-os)
+//!   wyse-init hostname              apply the host name again (set-hostname)
 //!   alpine (link)                   run a command in the Alpine subsystem
 //!   udhcpc-event (link)             udhcpc's lease handler
 mod alpine;

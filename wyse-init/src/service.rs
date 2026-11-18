@@ -5,7 +5,7 @@
 //! A service that is turned off in the settings just waits, so init does
 //! not keep restarting it.
 use crate::config::Config;
-use crate::{alpine, guard, prio, sys};
+use crate::{alpine, dhcp, guard, prio, sys};
 use std::fs;
 use std::os::unix::process::CommandExt;
 use std::path::Path;
@@ -49,19 +49,21 @@ pub fn main(name: &str) {
             start(-10, "tailscaled", &["--statedir=/var/lib/tailscale"]);
         }
         "dropbear" => {
-            on(&c, "SSH");
             sys::umask(0o077);
             // No password logins: built without them (dropbear-localoptions.h).
             start(-10, "dropbear", &["-F", "-R"]);
         }
         "ntpd" => {
-            let servers = c.words("NTP_SERVERS");
+            // The NTP servers from the DHCP lease (option 42, saved by
+            // dhcp.rs, which restarts ntpd when they change), else the pool.
+            let list = fs::read_to_string(dhcp::NTP_FILE).unwrap_or_default();
+            let mut servers: Vec<&str> = list.split_whitespace().collect();
             if servers.is_empty() {
-                sys::idle();
+                servers.push("pool.ntp.org");
             }
             let mut args = vec!["-n"];
-            for s in &servers {
-                args.extend(["-p", s.as_str()]);
+            for s in servers {
+                args.extend(["-p", s]);
             }
             start(0, "ntpd", &args);
         }

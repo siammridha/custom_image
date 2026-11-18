@@ -3,15 +3,18 @@
 //! Buildroot's udhcpc default.script does, with the kernel calls of
 //! ifconfig and route (see net.rs), so the image needs no `ip` command:
 //!   deconfig       interface up, address 0.0.0.0, drop its DNS lines
-//!   bound / renew  set address, routes and DNS from the lease
+//!   bound / renew  set address, routes and DNS from the lease, and save its
+//!                  NTP servers (option 42) for ntpd
 //! udhcpc passes the lease in environment variables.
 use crate::net::{self, Route};
-use crate::prio;
+use crate::{prio, sys};
 use std::env;
 use std::fs;
 use std::net::Ipv4Addr;
 
 const RESOLV: &str = "/etc/resolv.conf";
+/// The NTP servers of the last lease, read by the ntpd service.
+pub const NTP_FILE: &str = "/run/ntp-servers";
 const ANY: Ipv4Addr = Ipv4Addr::UNSPECIFIED;
 
 fn var(k: &str) -> String {
@@ -94,6 +97,13 @@ fn bound(iface: &str) {
         lines.push(format!("nameserver {d} # {iface}"));
     }
     write_resolv(iface, &lines);
+
+    // New NTP servers: restart ntpd (init starts it again with them).
+    let ntp = var("ntpsrv").split_whitespace().collect::<Vec<_>>().join(" ");
+    if fs::read_to_string(NTP_FILE).unwrap_or_default().trim() != ntp {
+        report("ntp servers", fs::write(NTP_FILE, format!("{ntp}\n")));
+        sys::kill_name("ntpd", sys::SIGTERM);
+    }
 }
 
 /// Replace this interface's lines in resolv.conf (marked "# <iface>").

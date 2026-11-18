@@ -17,7 +17,7 @@ pub fn main() {
     persist_dirs();
     coldplug();
     hostname(&c);
-    network(&c);
+    network();
 }
 
 fn mkdir_mode(path: &str, mode: u32) {
@@ -67,7 +67,7 @@ fn find_modalias(dir: &Path, out: &mut BTreeSet<String>) {
     }
 }
 
-/// Host name (kernel) and /etc/hostname. Also run by setup-os through
+/// Host name (kernel) and /etc/hostname. Also run by set-hostname through
 /// `wyse-init hostname`.
 pub fn hostname(c: &Config) {
     let h = c.get("HOSTNAME");
@@ -77,29 +77,27 @@ pub fn hostname(c: &Config) {
     let _ = fs::write("/etc/hostname", format!("{h}\n"));
 }
 
-/// Loopback up, then DHCP on the network interfaces.
-fn network(c: &Config) {
+/// Loopback up, then DHCP on every eth*/en* interface.
+fn network() {
     if let Err(e) = net::link_up("lo") {
         eprintln!("lo: {e}");
     }
-    let mut ifaces = c.words("NET_IFACES");
-    if ifaces == ["auto"] {
-        ifaces = fs::read_dir("/sys/class/net")
-            .map(|rd| {
-                rd.flatten()
-                    .map(|e| e.file_name().to_string_lossy().into_owned())
-                    .filter(|n| n.starts_with("eth") || n.starts_with("en"))
-                    .collect()
-            })
-            .unwrap_or_default();
-        ifaces.sort();
-    }
+    let mut ifaces: Vec<String> = fs::read_dir("/sys/class/net")
+        .map(|rd| {
+            rd.flatten()
+                .map(|e| e.file_name().to_string_lossy().into_owned())
+                .filter(|n| n.starts_with("eth") || n.starts_with("en"))
+                .collect()
+        })
+        .unwrap_or_default();
+    ifaces.sort();
     for i in &ifaces {
         if let Err(e) = net::link_up(i) {
             eprintln!("{i}: {e}");
         }
         // The lease handler (/usr/libexec/wyse/udhcpc-event) is udhcpc's
-        // built-in default script (busybox.config), so no -s.
-        sys::run("udhcpc", &["-b", "-S", "-i", i]);
+        // built-in default script (busybox.config), so no -s. -O ntpsrv
+        // asks the router for its NTP servers.
+        sys::run("udhcpc", &["-b", "-S", "-O", "ntpsrv", "-i", i]);
     }
 }
