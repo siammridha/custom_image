@@ -52,8 +52,18 @@ fn bound(iface: &str) {
     report("address", net::set_addr(iface, addr, ip("broadcast"), ip("subnet")));
 
     // RFC 3442: with classless static routes, the router option is ignored.
+    // A renew with the same routes changes nothing: deleting and adding the
+    // default route again would make NetBird (--network-monitor) restart.
     let statics = var("staticroutes");
-    if !statics.is_empty() {
+    let routers: Vec<Ipv4Addr> = var("router").split_whitespace().filter_map(|r| r.parse().ok()).collect();
+    let want: Vec<(Ipv4Addr, Ipv4Addr, Ipv4Addr)> = if !statics.is_empty() {
+        parse_static(&statics).into_iter().filter(|r| !r.2.is_unspecified()).map(|(d, m, g)| (d, g, m)).collect()
+    } else {
+        routers.iter().map(|&g| (ANY, g, ANY)).collect()
+    };
+    if want.is_empty() || same_routes(&want, &gateway_routes(iface)) {
+        // Nothing to set, or already set.
+    } else if !statics.is_empty() {
         for (dst, gw, mask) in gateway_routes(iface) {
             let _ = net::route_del(iface, &Route { dst, mask, gw: Some(gw), metric: None });
         }
@@ -62,18 +72,15 @@ fn bound(iface: &str) {
             report("route", net::route_add(iface, &Route { dst, mask, gw, metric: None }));
         }
     } else {
-        let routers: Vec<Ipv4Addr> = var("router").split_whitespace().filter_map(|r| r.parse().ok()).collect();
-        if !routers.is_empty() {
-            let default = Route { dst: ANY, mask: ANY, gw: None, metric: None };
-            for _ in 0..64 {
-                if net::route_del(iface, &default).is_err() {
-                    break;
-                }
+        let default = Route { dst: ANY, mask: ANY, gw: None, metric: None };
+        for _ in 0..64 {
+            if net::route_del(iface, &default).is_err() {
+                break;
             }
-            for (n, r) in routers.into_iter().enumerate() {
-                let route = Route { dst: ANY, mask: ANY, gw: Some(r), metric: Some(n as u16) };
-                report("default route", net::route_add(iface, &route));
-            }
+        }
+        for (n, r) in routers.into_iter().enumerate() {
+            let route = Route { dst: ANY, mask: ANY, gw: Some(r), metric: Some(n as u16) };
+            report("default route", net::route_add(iface, &route));
         }
     }
 
@@ -122,6 +129,14 @@ fn parse_static(s: &str) -> Vec<(Ipv4Addr, Ipv4Addr, Ipv4Addr)> {
         .collect()
 }
 
+/// Same routes, in any order.
+fn same_routes(a: &[(Ipv4Addr, Ipv4Addr, Ipv4Addr)], b: &[(Ipv4Addr, Ipv4Addr, Ipv4Addr)]) -> bool {
+    let (mut a, mut b) = (a.to_vec(), b.to_vec());
+    a.sort();
+    b.sort();
+    a == b
+}
+
 /// Routes on `iface` that go through a gateway: (dest, gateway, mask).
 fn gateway_routes(iface: &str) -> Vec<(Ipv4Addr, Ipv4Addr, Ipv4Addr)> {
     parse_routes(&fs::read_to_string("/proc/net/route").unwrap_or_default(), iface)
@@ -167,6 +182,16 @@ mod tests {
                 (a("1.2.3.4"), a("255.255.255.255"), a("0.0.0.0")),
             ]
         );
+    }
+
+    #[test]
+    fn same_routes_any_order() {
+        let a = |s: &str| s.parse::<Ipv4Addr>().unwrap();
+        let x = (ANY, a("192.168.80.1"), ANY);
+        let y = (a("10.0.0.0"), a("192.168.80.2"), a("255.0.0.0"));
+        assert!(same_routes(&[x, y], &[y, x]));
+        assert!(!same_routes(&[x], &[x, y]));
+        assert!(!same_routes(&[x], &[]));
     }
 
     #[test]

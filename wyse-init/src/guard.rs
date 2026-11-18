@@ -38,7 +38,10 @@ impl Guard<'_> {
     /// connected"), so the first "up" of each boot disconnects first.
     fn nb_up(&self, first: bool) -> bool {
         let c = self.c;
-        let mut a = vec!["up".to_string(), "--hostname".into(), c.get("HOSTNAME").into()];
+        // --network-monitor (off by default on Linux): reconnect as soon as
+        // the default route changes, not after its server connection times
+        // out (up to 40 s, then retries up to 15 s apart).
+        let mut a = vec!["up".to_string(), "--network-monitor".into(), "--hostname".into(), c.get("HOSTNAME").into()];
         if !c.get("NB_SETUP_KEY").is_empty() {
             a.extend(["--setup-key".into(), c.get("NB_SETUP_KEY").into()]);
         }
