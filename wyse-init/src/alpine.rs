@@ -10,6 +10,8 @@
 //!   alpine [cmd ...]     (link) runs a command inside it; no command: a shell
 //! Everything in it runs as an app: in the apps cgroup (limited RAM), low
 //! priority, no real-time priority, and first to be killed when RAM runs out.
+//! Apps run as root but can't reach the main system's files (/persist with
+//! the VPN and SSH keys, the disk): see lock_down() and as_app().
 use crate::{apps, sys};
 use std::fs;
 use std::os::unix::process::{CommandExt, ExitStatusExt};
@@ -46,6 +48,10 @@ pub fn run() -> ! {
     if let Err(e) = sys::mount_fs("run", &run, "tmpfs", sys::MS_NOSUID | sys::MS_NODEV, "size=32m,mode=0755") {
         sys::log(&format!("alpine: mount {run}: {e}"));
         exit(1);
+    }
+    if let Err(e) = lock_down() {
+        sys::log(&format!("alpine: not starting the apps: {e}"));
+        sys::idle();
     }
     for level in ["sysinit", "boot", "default"] {
         if !openrc(level, 0) {
@@ -172,15 +178,59 @@ fn wait_running() {
     exit(1);
 }
 
+/// Mounts that keep root in the chroot away from the main system (the
+/// mounts are only under /data/alpine; the main system's /dev, /proc and
+/// /sys don't change):
+///   - every disk and partition in its /dev is /dev/null: no raw writes to
+///     /persist's partition
+///   - /proc/sys and /sys read-only: no core_pattern or modprobe path that
+///     the kernel would run as full root outside the chroot
+///   - /proc/sysrq-trigger is /dev/null: no forced reboot or remount
+/// Safe to run again (the old mounts are taken away first).
+fn lock_down() -> Result<(), String> {
+    let bind_null = |t: &str| -> Result<(), String> {
+        let _ = sys::umount_detach(t);
+        sys::mount_fs("/dev/null", t, "", sys::MS_BIND, "").map_err(|e| format!("mount {t}: {e}"))
+    };
+    let disks = fs::read_dir("/sys/class/block").map_err(|e| format!("/sys/class/block: {e}"))?;
+    for d in disks.flatten() {
+        let t = format!("{A}/dev/{}", d.file_name().to_string_lossy());
+        if Path::new(&t).exists() {
+            bind_null(&t)?;
+        }
+    }
+    bind_null(&format!("{A}/proc/sysrq-trigger"))?;
+    let ps = format!("{A}/proc/sys");
+    let _ = sys::umount_detach(&ps);
+    sys::mount_fs("/proc/sys", &ps, "", sys::MS_BIND, "").map_err(|e| format!("mount {ps}: {e}"))?;
+    let ro = sys::MS_REMOUNT | sys::MS_BIND | sys::MS_RDONLY;
+    for t in [ps, format!("{A}/sys")] {
+        sys::mount_fs("", &t, "", ro, "").map_err(|e| format!("read-only {t}: {e}"))?;
+    }
+    Ok(())
+}
+
 /// In the apps cgroup (limited RAM), low priority, first to be killed when
-/// RAM runs out. Without CAP_SYS_NICE the programs it starts can't use
-/// real-time priority or raise their priority. Children inherit all of it.
+/// RAM runs out. Children inherit all of it. The programs it starts lose
+/// these root powers (capabilities):
+///   SYS_NICE         real-time priority, raising their priority
+///   SYS_CHROOT       leaving the chroot (chroot into a subfolder, cd ..)
+///   SYS_PTRACE       /proc/<pid>/root, fd, mem of system processes
+///                    (e.g. /proc/1/root/persist)
+///   SYS_ADMIN        mount (a disk, /proc/sys rw), leaving the apps cgroup
+///   MKNOD            making a new disk device file
+///   SYS_RAWIO        /dev/mem, /dev/port
+///   SYS_MODULE       loading kernel modules
+///   SYS_BOOT         kexec (starting another kernel), reboot
+///   DAC_READ_SEARCH  open_by_handle_at (opens files outside the chroot)
 fn as_app() {
-    const CAP_SYS_NICE: u64 = 23;
+    const DROP: [u64; 9] = [23, 18, 19, 21, 27, 17, 16, 22, 2];
     sys::put(&format!("{CG}/cgroup.procs"), &std::process::id().to_string());
     sys::put("/proc/self/oom_score_adj", "500");
     sys::nice(10);
-    sys::drop_cap(CAP_SYS_NICE);
+    for c in DROP {
+        sys::drop_cap(c);
+    }
 }
 
 /// Name servers and host names come from the main system.

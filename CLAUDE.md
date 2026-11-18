@@ -71,6 +71,11 @@ Partitions: p1 EFI/boot (64M at 1M), p2 read-only squashfs root (512M at
   sysinit/boot/default` in the chroot (no Alpine init, no PID namespace) and
   `openrc shutdown` at shutdown (`wyse-init stop-apps`). Use
   `alpine rc-status`, `alpine rc-service <name> restart`.
+- Apps run as root without some root powers (`as_app()` and `lock_down()`
+  in `wyse-init/src/alpine.rs`): no mount, chroot, ptrace, mknod, modules,
+  kexec; disk devices in Alpine's /dev are /dev/null; /proc/sys and /sys
+  are read-only there. `alpine` commands get the same limits, so
+  `/proc/1/root/...` does not work from `alpine`.
 - Priorities (`wyse-init/src/prio.rs`): cgroup `vpn` (SSH, VPNs, watchdog,
   ntpd, vpn-guard) has the highest cpu and io weight and memory.min 128M;
   cgroup `apps` has weight 1, memory.max = RAM - 256M, pids.max 4096.

@@ -49,6 +49,11 @@ keeps the main system small and unchanged.
 - It has its own busybox (Alpine's). The main system's busybox has only the
   commands the main system uses.
 - SSH, NetBird and Tailscale stay in the main system.
+- Apps run as root, but can't reach the main system's files: they can't
+  see `/persist` (VPN and SSH keys) or the disk, mount anything, leave the
+  Alpine folder, load kernel modules or change kernel settings (`/proc/sys`
+  and `/sys` are read-only in Alpine). They can still see, stop and kill
+  system processes; init starts those again.
 - SSH and the VPNs come first. They get almost all of the CPU, disk and
   network when they need it, and 128 MB of RAM that apps can't take. Apps
   can't use the last 256 MB of RAM, can't run more than 4096 processes and

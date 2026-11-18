@@ -41,9 +41,12 @@ extern "C" {
     fn c_syslog(pri: c_int, fmt: *const c_char, ...);
 }
 
+pub const MS_RDONLY: u64 = 1;
 pub const MS_NOSUID: u64 = 2;
 pub const MS_NODEV: u64 = 4;
+pub const MS_REMOUNT: u64 = 32;
 pub const MS_NOATIME: u64 = 1024;
+pub const MS_BIND: u64 = 4096;
 pub const MS_MOVE: u64 = 8192;
 pub const SIGKILL: i32 = 9;
 pub const SIGTERM: i32 = 15;
