@@ -6,8 +6,9 @@
 - Do not add Co-Authored-By trailers to commits.
 - Work on your own until the task is done, then give one short summary.
 - Write or update docs only after the real work is done and tested.
-- This repo is public. Never commit secrets: `.env`, `keys/`, `root_ca.crt`,
-  and anything with a NetBird/Tailscale key or SSH private key.
+- This repo is public. Never commit secrets: `config/` (except its README
+  and network.example), `.env`, `keys/`, and anything with a
+  NetBird/Tailscale key or SSH private key.
   Built images contain these secrets, so images are built locally and never
   published.
 - Base new code on what a real, working reference implementation does (read
@@ -59,11 +60,14 @@ User's rules for the image:
 - `wyse-init/` Rust program (x86_64 musl) that does preinit, boot, services,
   vpn-guard, apps setup and DHCP lease handling. No boot shell scripts.
 - `apps/<name>/install.sh` installs an app on a running device.
-- `build.sh` builds one image per device file (`keys/device.*`).
+- `config/` the user's settings and keys, git-ignored (`config/README`):
+  `network`, `private-ca-certificates.crt`, `ssh_keys`, `devices/<name>`.
+  Files are `name = value` lines, read by `get` in `scripts/config.sh`.
+- `build.sh` builds one image per device file (`config/devices/*`).
 - `scripts/device-keys.sh` checks a device file, makes its missing keys and
   writes them into the image (run by build.sh and post-build.sh).
-- `scripts/deploy.sh <host name> [ip]` puts a built image on a running
-  device over SSH.
+- `scripts/deploy.sh <host name>` puts a built image on a running
+  device over SSH (IP: `address` in its device file).
 
 # Disk and boot
 
@@ -73,12 +77,14 @@ Partitions: p1 EFI/boot (64M at 1M), p2 read-only squashfs root (512M at
   the only place that keeps changes.
 - The VPN and SSH keys and the host name are baked into the image, so they
   are the same after every boot. One image per device. Each device has a
-  file `keys/device.<any name>`, one value per line: model, host name, SSH
-  host key (ed25519 seed, hex; also NetBird SSH), NetBird WireGuard key
-  (base64), Tailscale machine key (`privkey:<hex>`). Only the first two
-  lines are needed: `scripts/device-keys.sh` makes missing keys and writes
-  them back. Keys already there are kept, so a device keeps its peers. Tailscale logs in again at every boot with
-  `TAILSCALE_KEY`, so that key must be reusable and not expire.
+  file `config/devices/<any name>`: `model`, `host`, `address` (IP for
+  deploy and test), and `ssh_key` (ed25519 seed, hex; also NetBird SSH),
+  `netbird` (WireGuard key, base64), `tailscale` (machine key,
+  `privkey:<hex>`). Only the first three are written by hand:
+  `scripts/device-keys.sh` makes missing keys and adds them at the end.
+  Keys already there are kept, so a device keeps its peers. Unknown or
+  repeated names are an error. Tailscale logs in again at every boot with
+  `tailscale_key`, so that key must be reusable and not expire.
 - Logs: syslogd writes `/data/log/messages` (kept across reboots, about
   1 MB at most). After a kernel panic, wyse-init boot saves the panic
   text that pstore kept in EFI variables to `/data/log/crash-<time>`.
@@ -102,25 +108,31 @@ Partitions: p1 EFI/boot (64M at 1M), p2 read-only squashfs root (512M at
   iocost is turned on for the disk. Each interface gets a 2-band `prio`
   qdisc; an nftables rule (table `ip wyse`) puts traffic from `apps` in the
   low band.
-- VPN settings are fixed in the image (no settings file). `.env`
-  `NETBIRD_KEY` and `TAILSCALE_KEY` go to `/etc/wyse/netbird.key` and
+- VPN settings are fixed in the image (no settings file). `config/network`
+  `netbird_key` and `tailscale_key` go to `/etc/wyse/netbird.key` and
   `/etc/wyse/tailscale.key` (root only). vpn-guard passes the file paths
   (`--setup-key-file`, `--auth-key=file:`), so the keys are never on a
-  command line, where apps could read them. The management URL (from
-  `HOST_DOMAIN` or `NETBIRD_URL`) and the `up` arguments are built into
-  wyse-init (`wyse-init/src/config.rs`).
+  command line, where apps could read them. The management URL
+  (`netbird_url`, required) and the `up` arguments are built into
+  wyse-init (`wyse-init/src/config.rs`). `static_host` (one IP and name)
+  goes into `/etc/hosts`. `config/ssh_keys` becomes root's
+  authorized_keys. `config/private-ca-certificates.crt` (one or more
+  certificates) is added to the system bundle between `# begin/end
+  private-ca-certificates.crt` lines (replaced on every build) and to
+  Alpine's.
 
 # Build
 
-- `cp .env.example .env`, fill it in; make an SSH key (`keys/README`); put
-  the private root CA in `root_ca.crt` (`ROOT_CA` in `.env` points to it).
-- `./build.sh [keys/device.<name> ...] [dev]` (no file: every device file),
-  or `make MODEL=3040 DEVICE=keys/device.<name>`. Images go to
+- Fill in `config/` (`config/README`). The private SSH key is not in the
+  repo: it is in the Mac's SSH agent, which VS Code forwards to the
+  container; deploy and test use the agent (no `-i`).
+- `./build.sh [host name ...] [prod]` (no name: every device file),
+  or `make MODEL=3040 DEVICE=config/devices/<name>`. Images go to
   `/home/vscode/wyse-build/images/<host name>/`. Each model has its own
   build folder: the Makefile adds `board/wyse/linux-<model>.fragment` to the
   kernel and passes the model to post-build.sh (the device file goes as
-  `WYSE_DEVICE`). Development build: `./build.sh ... dev`
-  (`make ... DEV=1`) adds the BusyBox commands in
+  `WYSE_DEVICE`). Builds are development builds unless `prod` is given
+  (`make ... PROD=1`). A development build adds the BusyBox commands in
   `board/wyse/busybox-dev.fragment` (ls, grep, ...), a root shell on the
   monitor (tty1, no password), all boot messages on it (no `quiet`) and
   the `test_lockup` module (freezes the CPUs, to test the watchdog);
@@ -149,8 +161,8 @@ Partitions: p1 EFI/boot (64M at 1M), p2 read-only squashfs root (512M at
   Only files matching `board/wyse/firmware-<model>` stay in /lib/firmware;
   lines with a package name come from that Alpine package (SOF firmware
   from `sof-firmware`). 5020 has no lists yet.
-- Wyse 3040 at `DEVICE_IP` in `.env`. SSH:
-  `ssh -i keys/wyse_ed25519 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null root@<ip>`.
+- Wyse 3040 at `address` in `config/devices/wyse-3040`. SSH:
+  `ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null root@<ip>`.
   No scp on the device; copy with `ssh ... 'cat > file' < file`.
 - Deploy: `scripts/deploy.sh <host name>` (keeps `/data`). It writes only p1 and
   p2, so it can't change the partition layout.

@@ -1,7 +1,7 @@
-# Build one device's image:  make MODEL=3040 DEVICE=keys/device.shop1
-#   (MODEL 3040 or 5020; DEVICE is the device's file, see scripts/device-keys.sh)
-# Development build (extra BusyBox commands, busybox-dev.fragment):
-#                            make MODEL=3040 DEVICE=keys/device.shop1 DEV=1
+# Build one device's image:  make MODEL=3040 DEVICE=config/devices/shop-01
+#   (MODEL 3040 or 5020; DEVICE is the device's file, see config/README)
+# Development build by default (extra BusyBox commands, busybox-dev.fragment,
+# root shell on the monitor). Production build:  ... PROD=1
 # Or run ./build.sh, which builds every device file.
 # Other Buildroot goals:  make MODEL=3040 menuconfig / linux-menuconfig / ...
 # Output image:           $(OUT)/images/disk.img (kept off the virtiofs workspace)
@@ -31,12 +31,12 @@ PATCH := $(CURDIR)/patches/buildroot-wyse.patch
 # The model's config: wyse_defconfig plus the model's kernel fragment, the
 # model name passed to post-build.sh, and BusyBox's development fragment.
 DEFCONFIG := $(OUT)/wyse-$(MODEL)_defconfig
-# Development builds copy busybox-dev.fragment here; production builds leave
+# Development builds copy busybox-dev.fragment here; production builds (PROD=1) leave
 # it empty. Written only when it changes: a newer file makes
 # Buildroot rebuild BusyBox.
 BBFRAG := $(OUT)/busybox-build.fragment
 bb_fragment = mkdir -p $(OUT) && \
-	$(if $(filter 1,$(DEV)),cat $(EXT)/board/wyse/busybox-dev.fragment,printf '') \
+	$(if $(filter 1,$(PROD)),printf '',cat $(EXT)/board/wyse/busybox-dev.fragment) \
 		> $(BBFRAG).new && \
 	{ cmp -s $(BBFRAG).new $(BBFRAG) && rm $(BBFRAG).new || mv $(BBFRAG).new $(BBFRAG); }
 model_defconfig = mkdir -p $(OUT) && \

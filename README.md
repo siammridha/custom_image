@@ -9,11 +9,17 @@ stay reachable.
 Clone with `git clone --recursive` (Buildroot is a submodule; the build also
 fetches it). Open the folder in its dev container (`.devcontainer/`), then:
 
-    cp .env.example .env        # fill in your keys
-    cp /path/to/ca.crt root_ca.crt   # private root CA of your NetBird server
-    ssh-keygen -t ed25519 -N '' -C wyse -f keys/wyse_ed25519
-    printf "3040\nshop-01\n" > keys/device.shop1   # model, host name
-    ./build.sh                  # one image per keys/device.* file
+    mkdir -p config/devices
+    cp config/network.example config/network     # fill it in
+    cp /path/to/ca.crt config/private-ca-certificates.crt
+    cat ~/.ssh/wyse_ed25519.pub > config/ssh_keys
+    printf 'model   = 3040\nhost    = shop-01\naddress = 192.168.1.20\n' > config/devices/shop-01
+    ./build.sh                  # development images, one per config/devices/ file
+    ./build.sh prod             # production images (put these on devices at sites)
+
+`config/README` explains each file. Your private SSH key stays on your
+computer, in its SSH agent (`ssh-add`); VS Code passes the agent into the
+container, and deploy uses it.
 
 The first build of a model takes about an hour; later builds only redo what
 changed, and every further device of the same model takes minutes. The full
@@ -27,17 +33,17 @@ load at boot; only the firmware files on `firmware-<model>` are kept.
 Your VPN keys and SSH key are baked into the image. Keep built images
 private.
 
-Each device has its own image and its own file `keys/device.<any name>`,
-one value per line: model, host name, SSH host key, NetBird key, Tailscale
-key. Write the first two; the build makes the keys and adds them to the
-file (see `scripts/device-keys.sh`). The keys are the same after every boot
+Each device has its own image and its own file `config/devices/<any name>`
+with `model`, `host` and `address` (its IP, for deploy). The build makes
+the device's SSH host key, NetBird key and Tailscale key and adds them to
+the file (see `scripts/device-keys.sh`). The keys are the same after every boot
 and every new image. Keep a copy of the files: without them the devices get
 new VPN identities.
 
 ## Install
 
 - New device: write `disk.img` to its eMMC.
-- Running device: `scripts/deploy.sh <host name> [ip]`. Keeps `/data`.
+- Running device: `scripts/deploy.sh <host name>`. Keeps `/data`.
   Refuses if the device's BIOS model name is not the device file's model.
 
 ## Alpine subsystem

@@ -1,20 +1,22 @@
 #!/bin/sh
-# A device's settings and keys, one value per line in its own file
-# (keys/device.<any name>; the host name is always line 2):
+# A device's settings and keys: its own file in config/devices/ (any name),
+# "name = value" lines, # starts a comment line:
 #
-#   3040                    model
-#   shop-01                 host name
-#   <64 hex>                SSH host key: ed25519 seed (dropbear and NetBird SSH)
-#   <base64>                NetBird WireGuard private key (default.json PrivateKey)
-#   privkey:<64 hex>        Tailscale machine key (tailscaled.state _machinekey)
+#   model     = 3040              3040 or 5020
+#   host      = shop-01           host name
+#   address   = 192.168.80.13     IP for scripts/deploy.sh and test-device.sh
+#   ssh_key   = <64 hex>          SSH host key: ed25519 seed (dropbear and NetBird SSH)
+#   netbird   = <base64>          NetBird WireGuard private key (default.json PrivateKey)
+#   tailscale = privkey:<64 hex>  Tailscale machine key (tailscaled.state _machinekey)
 #
-#   scripts/device-keys.sh <file>            check it, make missing keys
+#   scripts/device-keys.sh <file>            check it, add missing keys
 #   scripts/device-keys.sh <file> <target>   also write the keys into the
 #                                            image's target folder
 #
-# Only lines 1 and 2 are needed: missing keys are made from /dev/urandom and
-# written back to the file. Keys already there are kept, so a device keeps
-# its NetBird and Tailscale peer. File formats follow the programs' source:
+# Only model and host are needed: missing keys are made from /dev/urandom
+# and added to the end of the file. Keys already there are kept, so a device
+# keeps its NetBird and Tailscale peer. File formats follow the programs'
+# source:
 #   - NetBird 0.83.1 default.json: PrivateKey and SSHKey (PKCS8 PEM, as Go's
 #     x509.MarshalPKCS8PrivateKey makes it); NetBird fills in the rest.
 #   - Tailscale 1.104.7 tailscaled.state (FileStore: JSON map, values base64).
@@ -28,13 +30,21 @@ F=${1:?usage: $0 <device file> [target dir]}
 T=${2:-}
 die() { echo "$F: $*" >&2; exit 1; }
 [ -f "$F" ] || die "no such file"
-line() { sed -n "${1}p" "$F" | tr -d '\r' | sed 's/^[ \t]*//;s/[ \t]*$//'; }
-MODEL=$(line 1); HOST=$(line 2); SSH=$(line 3); NB=$(line 4); TS=$(line 5)
-[ -z "$(sed -n '6,$p' "$F" | tr -d ' \t\r\n')" ] || die "more than 5 lines"
+. "$(dirname "$0")/config.sh"
 
-case $MODEL in 3040|5020) ;; *) die "line 1: model must be 3040 or 5020, not '$MODEL'" ;; esac
+NAMES="model host address ssh_key netbird tailscale"
+BAD=$(grep -vE '^[ \t]*(#|$)' "$F" | tr -d '\r' |
+	grep -vE "^[ \t]*($(echo $NAMES | tr ' ' '|'))[ \t]*=" || true)
+[ -z "$BAD" ] || die "unknown line: $(echo "$BAD" | head -n 1) (names: $NAMES)"
+for n in $NAMES; do
+	[ "$(grep -cE "^[ \t]*$n[ \t]*=" "$F")" -le 1 ] || die "$n is there more than once"
+done
+MODEL=$(get "$F" model); HOST=$(get "$F" host)
+SSH=$(get "$F" ssh_key); NB=$(get "$F" netbird); TS=$(get "$F" tailscale)
+
+case $MODEL in 3040|5020) ;; *) die "model must be 3040 or 5020, not '$MODEL'" ;; esac
 echo "$HOST" | grep -qE '^[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?$' ||
-	die "line 2: '$HOST' is not a valid host name (letters, digits and '-', max 63)"
+	die "host: '$HOST' is not a valid host name (letters, digits and '-', max 63)"
 
 hex32() { echo "$1" | grep -qE '^[0-9a-f]{64}$'; }
 rand() { od -An -tx1 -N32 /dev/urandom | tr -d ' \n'; }
@@ -44,22 +54,25 @@ clamp() {
 }
 b64() { xxd -r -p | base64 | tr -d '\n'; }
 
-if [ -z "$SSH" ]; then SSH=$(rand); fi
-hex32 "$SSH" || die "line 3: SSH key must be 64 hex characters"
-if [ -z "$NB" ]; then NB=$(clamp "$(rand)" | b64); fi
+# Missing keys are added at the end; the rest of the file stays as it is.
+add() {
+	if [ -z "$ADDED" ]; then
+		[ -z "$(tail -c 1 "$F")" ] || echo >> "$F"
+		echo "# Made by the build. Keep them: new keys mean a new VPN peer." >> "$F"
+	fi
+	printf '%-9s = %s\n' "$1" "$2" >> "$F"
+	ADDED="$ADDED $1"
+}
+ADDED=
+if [ -z "$SSH" ]; then SSH=$(rand); add ssh_key "$SSH"; fi
+hex32 "$SSH" || die "ssh_key must be 64 hex characters"
+if [ -z "$NB" ]; then NB=$(clamp "$(rand)" | b64); add netbird "$NB"; fi
 NBHEX=$(printf %s "$NB" | base64 -d 2>/dev/null | xxd -p -c 64) || true
-hex32 "$NBHEX" || die "line 4: NetBird key must be 32 bytes in base64"
-if [ -z "$TS" ]; then TS=privkey:$(clamp "$(rand)"); fi
+hex32 "$NBHEX" || die "netbird must be 32 bytes in base64"
+if [ -z "$TS" ]; then TS=privkey:$(clamp "$(rand)"); add tailscale "$TS"; fi
 hex32 "${TS#privkey:}" && [ "${TS%%:*}" = privkey ] ||
-	die "line 5: Tailscale key must be privkey:<64 hex characters>"
-
-# Written back only when something changed (new keys, extra spaces, CRLF).
-NEW=$(printf "%s\n" "$MODEL" "$HOST" "$SSH" "$NB" "$TS")
-if [ "$NEW" != "$(cat "$F")" ]; then
-	(umask 077; echo "$NEW" > "$F.new")
-	mv "$F.new" "$F"
-	echo "$F: updated"
-fi
+	die "tailscale must be privkey:<64 hex characters>"
+[ -z "$ADDED" ] || echo "$F: added$ADDED"
 chmod 600 "$F"
 [ -n "$T" ] || exit 0
 

@@ -1,0 +1,28 @@
+Your own settings and keys. Everything here except this file and
+network.example is git-ignored: it is baked into the images, so keep the
+images private too.
+
+  network                       settings shared by every device
+                                (copy network.example and fill it in)
+  private-ca-certificates.crt   your private CA certificates (one or more,
+                                PEM), trusted by every device and its Alpine
+  ssh_keys                      public SSH keys that can log in as root, one
+                                per line (the contents of ~/.ssh/<key>.pub)
+  devices/<any name>            one file per device
+
+A device file: "name = value" lines, # starts a comment line.
+
+  model     = 3040            3040 or 5020
+  host      = shop-01         host name
+  address   = 192.168.80.13   IP for scripts/deploy.sh and test-device.sh
+
+The build adds the device's keys at the end (ssh_key, netbird, tailscale;
+see scripts/device-keys.sh). Keep a copy of the files: without these keys a
+device gets new VPN identities.
+
+Your private SSH key stays out of this folder. Keep it on your computer
+(for example ~/.ssh/wyse_ed25519, made with
+  ssh-keygen -t ed25519 -C wyse -f ~/.ssh/wyse_ed25519)
+and load it into the SSH agent on the Mac:
+  ssh-add --apple-use-keychain ~/.ssh/wyse_ed25519
+VS Code passes the agent to the container; deploy and test use it.

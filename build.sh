@@ -1,53 +1,51 @@
 #!/bin/sh
-# Build one image per device. Each device has its own file: keys/device.<any
-# name> with the model and host name, and its keys (made on the first build;
-# see scripts/device-keys.sh).
+# Build one image per device. Each device has its own file in
+# config/devices/ (see config/README).
 #
-#   ./build.sh                     every keys/device.* file
-#   ./build.sh keys/device.shop1   only these devices (one or more files)
-#   ... dev                        development build: extra BusyBox commands
-#                                  for scripts and SSH (busybox-dev.fragment).
-#                                  Never for a device at a site.
+#   ./build.sh                  every device in config/devices/
+#   ./build.sh shop-01 ...      only these devices (their host names)
+#   ... prod                    production build. Without it: development
+#                               build (extra BusyBox commands, root shell on
+#                               the monitor). Never put a development build
+#                               on a device at a site.
 #
 # Images go to /home/vscode/wyse-build/images/<host name>/. The full log of
 # the last build goes to build.log. The first build of a model takes about an
 # hour; later builds (and every further device) only redo what changed.
 set -eu
 cd "$(dirname "$0")"
+CFG=config
+. scripts/config.sh
 
-DEV=
+PROD=
 FILES=
 for a in "$@"; do
 	case $a in
-		dev) DEV=1 ;;
-		*) [ -f "$a" ] || { echo "No such device file: $a" >&2; exit 1; }
-		   FILES="$FILES $a" ;;
+		prod) PROD=1 ;;
+		*) FILES="$FILES $(device_file "$a")" ;;
 	esac
 done
-[ -n "$FILES" ] || FILES=$(ls keys/device.* 2>/dev/null || true)
+[ -n "$FILES" ] || FILES=$(ls config/devices/* 2>/dev/null || true)
 if [ -z "$FILES" ]; then
-	echo "No device files. Make one per device, for example keys/device.shop1:" >&2
-	printf '  3040\n  shop-01\n' >&2
-	echo "(model, then host name; the build adds the keys)" >&2
+	echo "No device files. Make one per device, for example config/devices/shop-01:" >&2
+	printf '  model = 3040\n  host  = shop-01\n' >&2
+	echo "(the build adds the keys; see config/README)" >&2
 	exit 1
 fi
-
-# Settings baked into the image.
-[ -f .env ] || { echo "No .env: copy .env.example to .env and fill it in." >&2; exit 1; }
-CA=$(sed -n 's/^ROOT_CA=//p' .env | tr -d '"\r')
-[ -z "$CA" ] || [ -f "$CA" ] || { echo "ROOT_CA in .env points to $CA, which does not exist." >&2; exit 1; }
+[ -f config/network ] || { echo "No config/network: copy config/network.example and fill it in." >&2; exit 1; }
 
 # Check every file and make missing keys first, then build grouped by model
 # (devices of the same model reuse the same build folder).
 for f in $FILES; do scripts/device-keys.sh "$f"; done
-LIST=$(for f in $FILES; do echo "$(sed -n 1p "$f") $(sed -n 2p "$f") $f"; done | sort)
+LIST=$(for f in $FILES; do echo "$(get "$f" model) $(get "$f" host) $f"; done | sort -u)
 echo "$LIST" | awk '{print $2}' | sort | uniq -d | grep . >&2 &&
 	{ echo "These host names are in more than one device file." >&2; exit 1; }
 
+KIND=development; [ -z "$PROD" ] || KIND=production
 start=$(date +%s)
 echo "$LIST" | while read -r MODEL H F; do
-	echo "Building $H (Wyse $MODEL${DEV:+, development}) from $F (log: build.log)..."
-	make MODEL=$MODEL DEVICE="$F" DEV=$DEV > build.log 2>&1 &
+	echo "Building $H (Wyse $MODEL, $KIND) from $F (log: build.log)..."
+	make MODEL=$MODEL DEVICE="$F" PROD=$PROD > build.log 2>&1 &
 	BUILD=$!
 	# Progress bar (scripts/build-progress.sh) once the config exists.
 	O=/home/vscode/wyse-build/output-$MODEL
@@ -64,4 +62,4 @@ echo "$LIST" | while read -r MODEL H F; do
 	echo "  $H: $I"
 done
 echo "Done in $(( ($(date +%s) - start) / 60 )) min."
-echo "  Install on a running device:  scripts/deploy.sh <host name> [device-ip]"
+echo "  Install on a running device:  scripts/deploy.sh <host name>"

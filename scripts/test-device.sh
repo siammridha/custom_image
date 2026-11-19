@@ -1,26 +1,23 @@
 #!/bin/sh
 # Deploy the built image to a test Wyse and check that it works.
 #
-#   scripts/test-device.sh <host name> [device-ip]   (ip default: DEVICE_IP in .env)
+#   scripts/test-device.sh <host name>   (IP: address in its device file)
 #
 # Only for a test device: it replaces /data/alpine with a fresh one (the old
 # one is deleted at the end), removes all apps and installs both apps in
 # apps/ again.
 # The apps need a Wyse 3040.
 cd "$(dirname "$0")/.." || exit 1
-get() { sed -n "s/^$1=//p" .env 2>/dev/null | head -n 1 | tr -d '"\r'; }
-NAME=${1:?usage: $0 <host name> [device-ip]}
-MODEL=
-for f in keys/device.*; do
-	[ "$(sed -n 2p "$f" 2>/dev/null)" = "$NAME" ] && MODEL=$(sed -n 1p "$f")
-done
-case $MODEL in 3040|5020) ;; *) echo "no device file (keys/device.*) with host name $NAME" >&2; exit 1 ;; esac
-IP=${2:-$(get DEVICE_IP)}
-[ -n "$IP" ] || { echo "usage: $0 <host name> <device-ip> (or DEVICE_IP in .env)" >&2; exit 1; }
-KEY=$(get SSH_KEY_FILE); KEY=${KEY:-keys/wyse_ed25519}
-HOST=$(get HOST_DOMAIN)
+CFG=config
+. scripts/config.sh
+NAME=${1:?usage: $0 <host name>}
+DF=$(device_file "$NAME") || exit 1
+MODEL=$(get "$DF" model)
+IP=$(get "$DF" address)
+[ -n "$IP" ] || { echo "$DF: no address (the device's IP)" >&2; exit 1; }
+NB_URL=$(get config/network netbird_url)
 O=${WYSE_OUT:-/home/vscode/wyse-build/output-$MODEL}
-K="-i $KEY -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -o ConnectTimeout=5"
+K="-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -o ConnectTimeout=5"
 D=root@$IP
 
 # The image has only the commands it uses itself. The commands below that
@@ -43,7 +40,7 @@ S() { ssh -n $K $D "PATH=\$PATH:/tmp/t/bin; $*"; }
 waitup() { sleep 20; for i in $(seq 40); do S true 2>/dev/null && break; sleep 5; done; tools; echo up; sleep 45; }
 
 echo "#### deploy"
-scripts/deploy.sh "$NAME" "$IP" </dev/null 2>&1 | grep -E "md5|rebooting|FAIL|rror"
+scripts/deploy.sh "$NAME" </dev/null 2>&1 | grep -E "md5|rebooting|FAIL|rror"
 waitup
 S 'grep -c "	00000000	" /proc/net/route; netbird status | grep -E "Management|Signal"; tailscale status | grep -c .
 for a in sv runsv runsvdir chroot renice cp; do command -v $a >/dev/null && echo "still there: $a"; done; true'
@@ -89,5 +86,5 @@ grep -ihE "not found|alpine:" /data/log/messages | grep -v WQBC | grep -v iptabl
 
 echo "#### private CA"
 S "ls /data/alpine/usr/local/share/ca-certificates
-[ -n '$HOST' ] && { alpine wget -q -O /dev/null https://$HOST:4478/; echo \"wget rc=\$? (5 = certificate not trusted)\"; }
+[ -n '$NB_URL' ] && { alpine wget -q -O /dev/null '$NB_URL/'; echo \"wget rc=\$? (5 = certificate not trusted)\"; }
 alpine wget -q -O /dev/null https://github.com/; echo \"github rc=\$?\""

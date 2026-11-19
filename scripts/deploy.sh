@@ -1,10 +1,11 @@
 #!/bin/sh
 # Put the built image on a running Wyse over SSH, then reboot it.
 #
-#   scripts/deploy.sh <host name> [device-ip]   (ip default: DEVICE_IP in .env)
+#   scripts/deploy.sh <host name>
 #
-# The image is the one ./build.sh made for that host name; the model comes
-# from the device file (keys/device.*) with that host name.
+# The image is the one ./build.sh made for that host name; the model and the
+# IP (model, address) come from the device file in config/devices/ with that
+# host name. SSH logs in with the key in your SSH agent (config/README).
 #
 # Writes only the boot (p1) and root (p2) partitions; /data is kept. The
 # device runs scripts/update.sh from RAM with a copied busybox, so it does
@@ -14,20 +15,17 @@
 # Same partition offsets as external/board/wyse/genimage.cfg.
 set -eu
 cd "$(dirname "$0")/.."
-get() { sed -n "s/^$1=//p" .env 2>/dev/null | head -n 1 | tr -d '"\r'; }
-H=${1:?usage: $0 <host name> [device-ip]}
-MODEL=
-for f in keys/device.*; do
-	[ "$(sed -n 2p "$f" 2>/dev/null)" = "$H" ] && MODEL=$(sed -n 1p "$f")
-done
-case $MODEL in 3040|5020) ;; *) echo "no device file (keys/device.*) with host name $H" >&2; exit 1 ;; esac
-IP=${2:-$(get DEVICE_IP)}
-KEY=$(get SSH_KEY_FILE); KEY=${KEY:-keys/wyse_ed25519}
-[ -n "$IP" ] || { echo "usage: $0 <host name> <device-ip> (or DEVICE_IP in .env)" >&2; exit 1; }
+CFG=config
+. scripts/config.sh
+H=${1:?usage: $0 <host name>}
+DF=$(device_file "$H")
+MODEL=$(get "$DF" model)
+IP=$(get "$DF" address)
+[ -n "$IP" ] || { echo "$DF: no address (the device's IP)" >&2; exit 1; }
 I=/home/vscode/wyse-build/images/$H
 AT=$(ls "${WYSE_DL:-/home/vscode/wyse-build/dl}"/alpine/alpine-minirootfs-*-x86_64.tar.gz 2>/dev/null | sort -V | tail -n 1)
 [ -n "$AT" ] || { echo "no Alpine archive in the download folder: build first" >&2; exit 1; }
-SSH="ssh -i $KEY -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -o ConnectTimeout=10"
+SSH="ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -o ConnectTimeout=10"
 [ -f "$I/rootfs.squashfs" ] || { echo "no image in $I: build it first (./build.sh)" >&2; exit 1; }
 
 # The disk the device booted from: the read-only root (/rom) must be its

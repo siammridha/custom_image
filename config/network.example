@@ -1,0 +1,12 @@
+# Settings shared by every device. Copy to config/network and fill in.
+# Lines starting with # are comments.
+
+# A server name and its IP, added to /etc/hosts on the device
+static_host   = 203.0.113.10  sentryvault.example.com
+# NetBird management URL (required)
+netbird_url   = https://sentryvault.example.com:4478
+# NetBird setup key
+netbird_key   =
+# Tailscale auth key (reusable, does not expire: devices log in again at
+# every boot)
+tailscale_key =

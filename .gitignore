@@ -1,8 +1,11 @@
 # Secrets: never commit. They are baked into images built locally.
+# Your own settings and keys (config/README).
+config/*
+!config/README
+!config/network.example
+# Old places, so old copies are never committed.
 .env
 keys/*
-!keys/README
-external/board/wyse/authorized_keys
 root_ca.crt
 # NetBird server config (setup key, relay secret, store key)
 netbird_server_config/

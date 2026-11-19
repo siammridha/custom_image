@@ -86,7 +86,8 @@ Traefik does the TLS.
 
 3. Router/firewall: forward TCP 33073 to the server, like 4478.
 
-4. Devices: in `.env` set `NETBIRD_URL=https://netbird.sentryvault.com:33073`,
+4. Devices: in `config/network` set
+   `netbird_url = https://netbird.sentryvault.com:33073`,
    then build and deploy. post-build.sh writes it to the device as
    `NB_MANAGEMENT_URL`. The device keeps its NetBird identity. Signal and
    relay stay on 4478 (management tells the device their addresses).

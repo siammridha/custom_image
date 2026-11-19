@@ -1,13 +1,13 @@
 //! Settings, all fixed in the image (build a new image to change them):
 //!   - NetBird setup key and Tailscale auth key: files in /etc/wyse, root
-//!     only (from .env). NetBird and Tailscale read them themselves, so the
+//!     only (from config/network). NetBird and Tailscale read them themselves, so the
 //!     keys are never on a command line, where apps could read them
 //!   - everything else: below, in this program
 //! Files are read from /rom, the read-only image, so a change in RAM is not
 //! used.
 use std::path::Path;
 
-/// The host name, from the device file (keys/device.*) at build time.
+/// The host name, from the device file (config/devices/) at build time.
 pub const HOSTNAME: &str = match option_env!("WYSE_HOSTNAME") {
     Some(v) if !v.is_empty() => v,
     _ => "localhost",
@@ -20,8 +20,8 @@ pub const MODULES: &str = match option_env!("WYSE_MODULES") {
     None => "",
 };
 
-/// NetBird's management server, from .env at build time (NETBIRD_URL, or
-/// https://HOST_DOMAIN:4478). Empty: NetBird's default.
+/// NetBird's management server, from config/network at build time
+/// (netbird_url, required by the build).
 pub const NB_MANAGEMENT_URL: &str = match option_env!("WYSE_NB_MANAGEMENT_URL") {
     Some(v) => v,
     None => "",

@@ -87,14 +87,15 @@ rm "$R/etc/inittab"
 ln -s /etc/init.d/net "$R/etc/runlevels/boot/net"
 rm "$R/etc/rc.conf"
 
-# The private root CA, trusted inside Alpine too: added to Alpine's bundle
+# The private CA certificates, trusted inside Alpine too: added to Alpine's bundle
 # (what programs read), and put where Alpine's update-ca-certificates
 # (package ca-certificates) takes local CAs from, so it stays if that
-# package is installed later.
+# package is installed later (it copies each file whole into the bundle,
+# so one file with several certificates works: update-ca.c, copyfile).
 if [ -n "$CA" ]; then
 	mkdir -p "$R/usr/local/share/ca-certificates"
-	cp "$CA" "$R/usr/local/share/ca-certificates/wyse-root-ca.crt"
-	chmod 644 "$R/usr/local/share/ca-certificates/wyse-root-ca.crt"
+	cp "$CA" "$R/usr/local/share/ca-certificates/private-ca-certificates.crt"
+	chmod 644 "$R/usr/local/share/ca-certificates/private-ca-certificates.crt"
 	cat "$CA" >> "$R/etc/ssl/certs/ca-certificates.crt"
 fi
 

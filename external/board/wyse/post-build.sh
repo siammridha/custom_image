@@ -14,23 +14,21 @@ rm -f "$T/etc/wyse/model" "$T/etc/wyse/modules" "$T/etc/hostname"
 rm -rf "$T/persist"
 mkdir -p "$T/rom" "$T/media/overlay" "$T/mnt" "$T/data"
 
-# Settings from the repo's .env (or the file in $WYSE_ENV).
-ENV=${WYSE_ENV:-$B/../../../.env}
-[ -f "$ENV" ] || ENV=/dev/null
-get() { sed -n "s/^$1=//p" "$ENV" | head -n 1 | tr -d '\r'; }
-# HOST_DOMAIN is the self-hosted NetBird server; HOST_IP is its address.
-# NETBIRD_URL in .env overrides the default management URL.
-ip=$(get HOST_IP); dom=$(get HOST_DOMAIN)
-NB_URL=$(get NETBIRD_URL)
-[ -z "$NB_URL" ] && [ -n "$dom" ] && NB_URL=https://$dom:4478
+# Settings from the config folder (config/README): config/network is the
+# same for every device.
+CFG=$B/../../../config
+. "$B/../../../scripts/config.sh"
+NET=$CFG/network
+[ -f "$NET" ] || { echo "No $NET (see config/network.example)"; exit 1; }
+NB_URL=$(get "$NET" netbird_url)
+[ -n "$NB_URL" ] || { echo "$NET: netbird_url is missing"; exit 1; }
 
 # The device file (WYSE_DEVICE, from make DEVICE=...): model, host name
 # and keys (scripts/device-keys.sh checks it).
-DF=${WYSE_DEVICE:?no device file (build with ./build.sh or make MODEL=$MODEL DEVICE=keys/device.<name>)}
-DK=$B/../../../scripts/device-keys.sh
-"$DK" "$DF"
-[ "$(sed -n 1p "$DF")" = "$MODEL" ] || { echo "$DF: line 1 is not model $MODEL"; exit 1; }
-H=$(sed -n 2p "$DF")
+DF=${WYSE_DEVICE:?no device file (build with ./build.sh or make MODEL=$MODEL DEVICE=config/devices/<name>)}
+"$B/../../../scripts/device-keys.sh" "$DF"
+[ "$(get "$DF" model)" = "$MODEL" ] || { echo "$DF: model is not $MODEL"; exit 1; }
+H=$(get "$DF" host)
 # The model's drivers (modules-<model>), loaded by wyse-init at boot.
 ML=$B/modules-$MODEL
 MODS=$( [ ! -f "$ML" ] || grep -v '^#' "$ML" | tr -s ' \t\n' '   ')
@@ -151,7 +149,7 @@ rm -rf "$T/var/lib/tailscale" "$T/var/lib/netbird" "$T/etc/wyse/dropbear" "$T/et
 # The dropbear package's link (to /var/run/dropbear); the key is elsewhere.
 rm -rf "$T/etc/dropbear"
 ln -snf /var/run/dropbear "$T/etc/dropbear"
-"$DK" "$DF" "$T"
+"$B/../../../scripts/device-keys.sh" "$DF" "$T"
 
 # Kernel modules: the system's own (IMAGE_MODULES) and the model's drivers
 # (modules-<model>), each with every module it needs. The kernel builds
@@ -329,38 +327,35 @@ find "$T/dev" -mindepth 1 -delete
 # the image (rebuilt from scratch on every build).
 K=$T/root/.ssh/authorized_keys
 mkdir -p "$T/root/.ssh" && chmod 0700 "$T/root" "$T/root/.ssh"
-: > "$K"
-[ -f "$B/authorized_keys" ] && cat "$B/authorized_keys" >> "$K"
+(umask 077; grep -vE '^[ \t]*(#|$)' "$CFG/ssh_keys" 2>/dev/null > "$K" || true)
+[ -s "$K" ] || echo "Warning: no keys in $CFG/ssh_keys: nobody can log in over SSH"
 printf '127.0.0.1\tlocalhost\n' > "$T/etc/hosts"
 rm -f "$T/etc/wyse/authorized_keys" "$T/etc/wyse/hosts"
+# static_host: "<ip> <name>", a server the device finds without DNS.
+v=$(get "$NET" static_host)
+[ -z "$v" ] || echo "$v" | awk '{ printf "%s\t%s\n", $1, $2 }' >> "$T/etc/hosts"
 
 # The VPN keys, in files only root can read. NetBird and Tailscale read
 # them themselves (--setup-key-file, --auth-key=file:), so the keys are
 # never on a command line, where apps could read them.
 rm -f "$T/etc/wyse/vpn.conf" "$T/etc/wyse/netbird.key" "$T/etc/wyse/tailscale.key"
 key() { [ -n "$2" ] && (umask 077; printf '%s\n' "$2" > "$T/etc/wyse/$1"); true; }
-key netbird.key "$(get NETBIRD_KEY)"
-key tailscale.key "$(get TAILSCALE_KEY)"
+key netbird.key "$(get "$NET" netbird_key)"
+key tailscale.key "$(get "$NET" tailscale_key)"
 
-[ -n "$dom" ] && [ -n "$ip" ] && printf '%s\t%s\n' "$ip" "$dom" >> "$T/etc/hosts"
-
-CA=
-if [ -f "$ENV" ]; then
-	v=$(get SSH_PUBLIC_KEY)
-	[ -n "$v" ] && echo "$v" >> "$K"
-
-	# ROOT_CA: the private root CA's certificate file (path relative to the
-	# repo, e.g. root_ca.crt). Added to the system trust store; the NetBird
-	# server's certificate is signed with it.
-	v=$(get ROOT_CA)
-	if [ -n "$v" ]; then
-		case $v in /*) CA=$v ;; *) CA=$(dirname "$ENV")/$v ;; esac
-		[ -f "$CA" ] || { echo "ROOT_CA: no file $CA"; exit 1; }
-		grep -qF "$(sed -n 2p "$CA")" "$T/etc/ssl/certs/ca-certificates.crt" ||
-			cat "$CA" >> "$T/etc/ssl/certs/ca-certificates.crt"
-	fi
+# The private CA certificates (one or more), trusted by the system. Added
+# between two marker lines; the old block is removed first, because
+# Buildroot keeps the target folder between builds. So certificates taken
+# out of the file are gone from the image too.
+CA=$CFG/private-ca-certificates.crt
+BUNDLE=$T/etc/ssl/certs/ca-certificates.crt
+sed -i '/^# begin private-ca-certificates.crt$/,/^# end private-ca-certificates.crt$/d' "$BUNDLE"
+if [ -f "$CA" ]; then
+	grep -q 'BEGIN CERTIFICATE' "$CA" || { echo "$CA: no certificate in it"; exit 1; }
+	{ echo "# begin private-ca-certificates.crt"; cat "$CA"; echo "# end private-ca-certificates.crt"; } >> "$BUNDLE"
+else
+	CA=
 fi
-chmod 0600 "$K"
 
 # The Alpine archive, with OpenRC, trimmed and with the private root CA
 # (see alpine-root.sh).
