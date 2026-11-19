@@ -12,11 +12,11 @@
   published.
 - Base new code on what a real, working reference implementation does (read
   its source first), not on memory or a spec.
-- This project is Rust only: write new programs and tools in Rust, not Go
-  or any other language.
+- Rust is the only programming language: no Go, Python or others. Shell
+  scripts are fine.
 - Long commands on the device (flashing, big transfers): run them in the
   background and use `ssh -n`. A foreground run once looked frozen.
-- Every build: the user must see its progress. Build with `./build.sh <model>`
+- Every build: the user must see its progress. Build with `./build.sh`
   run in the background: it prints the progress bar to the shell output
   (full log in `build.log`). Do not run `make` with its output sent to a file
   instead.
@@ -56,14 +56,14 @@ User's rules for the image:
 - `external/` Buildroot external tree: `configs/wyse_defconfig`,
   `board/wyse/` (kernel fragments, genimage, grub, post-build, rootfs
   overlay), `package/netbird`.
-- `device-keys/` Rust program run by post-build.sh: bakes the VPN and SSH
-  keys into the image.
 - `wyse-init/` Rust program (x86_64 musl) that does preinit, boot, services,
   vpn-guard, apps setup and DHCP lease handling. No boot shell scripts.
 - `apps/<name>/install.sh` installs an app on a running device.
-- `build.sh` asks for the model and builds the image.
-- `scripts/deploy.sh <model> [ip]` puts a built image on a running device
-  over SSH.
+- `build.sh` builds one image per device file (`keys/device.*`).
+- `scripts/device-keys.sh` checks a device file, makes its missing keys and
+  writes them into the image (run by build.sh and post-build.sh).
+- `scripts/deploy.sh <host name> [ip]` puts a built image on a running
+  device over SSH.
 
 # Disk and boot
 
@@ -72,10 +72,12 @@ Partitions: p1 EFI/boot (64M at 1M), p2 read-only squashfs root (512M at
 - The overlay is in RAM: every boot starts fresh from the image. `/data` is
   the only place that keeps changes.
 - The VPN and SSH keys and the host name are baked into the image, so they
-  are the same after every boot. `device-keys/` (Rust, runs at build time)
-  computes each key as SHA-256(secret + label) from `keys/device.secret`
-  (made if missing); the host name is `keys/device.hostname` (`build.sh`
-  asks). One image per device. Tailscale logs in again at every boot with
+  are the same after every boot. One image per device. Each device has a
+  file `keys/device.<any name>`, one value per line: model, host name, SSH
+  host key (ed25519 seed, hex; also NetBird SSH), NetBird WireGuard key
+  (base64), Tailscale machine key (`privkey:<hex>`). Only the first two
+  lines are needed: `scripts/device-keys.sh` makes missing keys and writes
+  them back. Keys already there are kept, so a device keeps its peers. Tailscale logs in again at every boot with
   `TAILSCALE_KEY`, so that key must be reusable and not expire.
 - Logs: syslogd writes `/data/log/messages` (kept across reboots, about
   1 MB at most). After a kernel panic, wyse-init boot saves the panic
@@ -112,10 +114,13 @@ Partitions: p1 EFI/boot (64M at 1M), p2 read-only squashfs root (512M at
 
 - `cp .env.example .env`, fill it in; make an SSH key (`keys/README`); put
   the private root CA in `root_ca.crt` (`ROOT_CA` in `.env` points to it).
-- `./build.sh` or `make MODEL=3040` / `MODEL=5020`. One image per model:
-  the Makefile adds `board/wyse/linux-<model>.fragment` to the kernel and
-  passes the model to post-build.sh. Development build: `./build.sh <model>
-  dev` (`make ... DEV=1`) adds the BusyBox commands in
+- `./build.sh [keys/device.<name> ...] [dev]` (no file: every device file),
+  or `make MODEL=3040 DEVICE=keys/device.<name>`. Images go to
+  `/home/vscode/wyse-build/images/<host name>/`. Each model has its own
+  build folder: the Makefile adds `board/wyse/linux-<model>.fragment` to the
+  kernel and passes the model to post-build.sh (the device file goes as
+  `WYSE_DEVICE`). Development build: `./build.sh ... dev`
+  (`make ... DEV=1`) adds the BusyBox commands in
   `board/wyse/busybox-dev.fragment` (ls, grep, ...), a root shell on the
   monitor (tty1, no password), all boot messages on it (no `quiet`) and
   the `test_lockup` module (freezes the CPUs, to test the watchdog);
@@ -147,7 +152,7 @@ Partitions: p1 EFI/boot (64M at 1M), p2 read-only squashfs root (512M at
 - Wyse 3040 at `DEVICE_IP` in `.env`. SSH:
   `ssh -i keys/wyse_ed25519 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null root@<ip>`.
   No scp on the device; copy with `ssh ... 'cat > file' < file`.
-- Deploy: `scripts/deploy.sh 3040` (keeps `/data`). It writes only p1 and
+- Deploy: `scripts/deploy.sh <host name>` (keeps `/data`). It writes only p1 and
   p2, so it can't change the partition layout.
 - The image's busybox has no ls, grep, head, sleep, mv, chmod, gzip and more
   (only what the image uses). Use `alpine <cmd>`; scripts bring Alpine's

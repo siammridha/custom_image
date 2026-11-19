@@ -12,30 +12,33 @@ fetches it). Open the folder in its dev container (`.devcontainer/`), then:
     cp .env.example .env        # fill in your keys
     cp /path/to/ca.crt root_ca.crt   # private root CA of your NetBird server
     ssh-keygen -t ed25519 -N '' -C wyse -f keys/wyse_ed25519
-    ./build.sh                  # asks: 3040 or 5020
+    printf "3040\nshop-01\n" > keys/device.shop1   # model, host name
+    ./build.sh                  # one image per keys/device.* file
 
 The first build of a model takes about an hour; later builds only redo what
-changed. `./build.sh 3040` skips the question. The full log is in `build.log`.
+changed, and every further device of the same model takes minutes. The full
+log is in `build.log`.
 
-The image is `/home/vscode/wyse-build/output-<model>/images/disk.img`.
-Each model has its own image: the kernel drivers differ. The drivers a
+The images are in `/home/vscode/wyse-build/images/<host name>/` (`disk.img`).
+Images of different models differ in their kernel drivers. The drivers a
 model uses are in the image (`external/board/wyse/modules-<model>`) and
 load at boot; only the firmware files on `firmware-<model>` are kept.
 
 Your VPN keys and SSH key are baked into the image. Keep built images
 private.
 
-Each device has its own image. Its NetBird, Tailscale and SSH host keys are
-computed from `keys/device.secret` (made on the first build), and its host
-name is `keys/device.hostname` (`build.sh` asks for it). The keys are the
-same after every boot and every new image built from the same secret. Keep
-a copy of both files: without them the device gets new VPN identities.
+Each device has its own image and its own file `keys/device.<any name>`,
+one value per line: model, host name, SSH host key, NetBird key, Tailscale
+key. Write the first two; the build makes the keys and adds them to the
+file (see `scripts/device-keys.sh`). The keys are the same after every boot
+and every new image. Keep a copy of the files: without them the devices get
+new VPN identities.
 
 ## Install
 
 - New device: write `disk.img` to its eMMC.
-- Running device: `scripts/deploy.sh <model> [ip]`. Keeps `/data`. Refuses
-  if the device's BIOS model name is not that model.
+- Running device: `scripts/deploy.sh <host name> [ip]`. Keeps `/data`.
+  Refuses if the device's BIOS model name is not the device file's model.
 
 ## Alpine subsystem
 

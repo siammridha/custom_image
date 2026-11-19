@@ -1,7 +1,8 @@
-# Build the image for one model:  make MODEL=3040   (or MODEL=5020)
+# Build one device's image:  make MODEL=3040 DEVICE=keys/device.shop1
+#   (MODEL 3040 or 5020; DEVICE is the device's file, see scripts/device-keys.sh)
 # Development build (extra BusyBox commands, busybox-dev.fragment):
-#                                 make MODEL=3040 DEV=1
-# Or run ./build.sh, which asks for the model.
+#                            make MODEL=3040 DEVICE=keys/device.shop1 DEV=1
+# Or run ./build.sh, which builds every device file.
 # Other Buildroot goals:  make MODEL=3040 menuconfig / linux-menuconfig / ...
 # Output image:           $(OUT)/images/disk.img (kept off the virtiofs workspace)
 MODELS := 3040 5020
@@ -20,7 +21,10 @@ JOBS ?= 6
 # generated br2-external files).
 # XZ_DEFAULTS=-T1: xz unpacks with one thread. With threads, one gcc archive
 # took 1.35 GB of RAM (66 MB with one); three at once ran out of memory.
+# WYSE_DEVICE: the device file, for post-build.sh. Not in the config like the
+# model: the config is made once per model, the device changes every build.
 BRMAKE = env -u MAKELEVEL -u MAKEFLAGS -u MFLAGS BR2_DL_DIR=$(DL) XZ_DEFAULTS=-T1 \
+	WYSE_DEVICE=$(if $(DEVICE),$(abspath $(DEVICE))) \
 	make -j$(JOBS) -l$(shell nproc) -C $(BR) BR2_EXTERNAL=$(EXT) O=$(OUT)
 GOALS := $(or $(MAKECMDGOALS),all)
 PATCH := $(CURDIR)/patches/buildroot-wyse.patch

@@ -7,7 +7,7 @@
 //! used.
 use std::path::Path;
 
-/// The host name, from keys/device.hostname at build time.
+/// The host name, from the device file (keys/device.*) at build time.
 pub const HOSTNAME: &str = match option_env!("WYSE_HOSTNAME") {
     Some(v) if !v.is_empty() => v,
     _ => "localhost",

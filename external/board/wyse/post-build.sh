@@ -24,11 +24,13 @@ ip=$(get HOST_IP); dom=$(get HOST_DOMAIN)
 NB_URL=$(get NETBIRD_URL)
 [ -z "$NB_URL" ] && [ -n "$dom" ] && NB_URL=https://$dom:4478
 
-# The device's host name (keys/device.hostname, asked by build.sh).
-K=$B/../../../keys
-H=$(cat "$K/device.hostname" 2>/dev/null || true)
-echo "$H" | grep -qE '^[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?$' ||
-	{ echo "keys/device.hostname: missing or not a valid host name (build with ./build.sh)"; exit 1; }
+# The device file (WYSE_DEVICE, from make DEVICE=...): model, host name
+# and keys (scripts/device-keys.sh checks it).
+DF=${WYSE_DEVICE:?no device file (build with ./build.sh or make MODEL=$MODEL DEVICE=keys/device.<name>)}
+DK=$B/../../../scripts/device-keys.sh
+"$DK" "$DF"
+[ "$(sed -n 1p "$DF")" = "$MODEL" ] || { echo "$DF: line 1 is not model $MODEL"; exit 1; }
+H=$(sed -n 2p "$DF")
 # The model's drivers (modules-<model>), loaded by wyse-init at boot.
 ML=$B/modules-$MODEL
 MODS=$( [ ! -f "$ML" ] || grep -v '^#' "$ML" | tr -s ' \t\n' '   ')
@@ -142,15 +144,14 @@ if [ -s "$BASE_DIR/busybox-build.fragment" ]; then
 	echo 'tty1::respawn:/bin/login -f root' >> "$T/etc/inittab"
 fi
 
-# VPN and SSH keys: computed from the device's secret (keys/device.secret)
-# and baked into the image, so they are the same after every boot.
+# VPN and SSH keys: from the device file, baked into the image, so they
+# are the same after every boot.
 mkdir -p "$T/var/lib"
 rm -rf "$T/var/lib/tailscale" "$T/var/lib/netbird" "$T/etc/wyse/dropbear" "$T/etc/netbird"
 # The dropbear package's link (to /var/run/dropbear); the key is elsewhere.
 rm -rf "$T/etc/dropbear"
 ln -snf /var/run/dropbear "$T/etc/dropbear"
-cargo run -q --release --manifest-path "$B/../../../device-keys/Cargo.toml" \
-	--target-dir "$BUILD_DIR/device-keys" -- "$K/device.secret" "$T"
+"$DK" "$DF" "$T"
 
 # Kernel modules: the system's own (IMAGE_MODULES) and the model's drivers
 # (modules-<model>), each with every module it needs. The kernel builds

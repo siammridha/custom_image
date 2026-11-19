@@ -1,5 +1,12 @@
-SSH key for logging in to the devices. Git-ignored (only this file is kept).
+Secrets: git-ignored (only this file is kept).
 
-Make one:
+SSH key for logging in to the devices. Make one:
   ssh-keygen -t ed25519 -N '' -C wyse -f keys/wyse_ed25519
 Then put the contents of keys/wyse_ed25519.pub in .env as SSH_PUBLIC_KEY.
+
+One file per device, device.<any name>, one value per line:
+  3040        model (3040 or 5020)
+  shop-01     host name
+  ...         SSH host key, NetBird key, Tailscale key
+Write the first two lines; the build adds the keys (scripts/device-keys.sh).
+Keep a copy: without these keys a device gets new VPN identities.

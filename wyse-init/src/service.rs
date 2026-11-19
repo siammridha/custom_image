@@ -45,7 +45,7 @@ pub fn main(name: &str) {
         "dropbear" => {
             sys::umask(0o077);
             // No password logins: built without them (dropbear-localoptions.h).
-            // The host key is baked into the image (device-keys).
+            // The host key is baked into the image (scripts/device-keys.sh).
             start(-10, "dropbear", &["-F", "-r", "/etc/wyse/dropbear_host_key"]);
         }
         "ntpd" => {

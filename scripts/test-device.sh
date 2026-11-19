@@ -1,7 +1,7 @@
 #!/bin/sh
 # Deploy the built image to a test Wyse and check that it works.
 #
-#   scripts/test-device.sh <model> [device-ip]   (ip default: DEVICE_IP in .env)
+#   scripts/test-device.sh <host name> [device-ip]   (ip default: DEVICE_IP in .env)
 #
 # Only for a test device: it replaces /data/alpine with a fresh one (the old
 # one is deleted at the end), removes all apps and installs both apps in
@@ -9,10 +9,14 @@
 # The apps need a Wyse 3040.
 cd "$(dirname "$0")/.." || exit 1
 get() { sed -n "s/^$1=//p" .env 2>/dev/null | head -n 1 | tr -d '"\r'; }
-MODEL=${1:-}
-case $MODEL in 3040|5020) ;; *) echo "usage: $0 <3040|5020> [device-ip]" >&2; exit 1 ;; esac
+NAME=${1:?usage: $0 <host name> [device-ip]}
+MODEL=
+for f in keys/device.*; do
+	[ "$(sed -n 2p "$f" 2>/dev/null)" = "$NAME" ] && MODEL=$(sed -n 1p "$f")
+done
+case $MODEL in 3040|5020) ;; *) echo "no device file (keys/device.*) with host name $NAME" >&2; exit 1 ;; esac
 IP=${2:-$(get DEVICE_IP)}
-[ -n "$IP" ] || { echo "usage: $0 <3040|5020> <device-ip> (or DEVICE_IP in .env)" >&2; exit 1; }
+[ -n "$IP" ] || { echo "usage: $0 <host name> <device-ip> (or DEVICE_IP in .env)" >&2; exit 1; }
 KEY=$(get SSH_KEY_FILE); KEY=${KEY:-keys/wyse_ed25519}
 HOST=$(get HOST_DOMAIN)
 O=${WYSE_OUT:-/home/vscode/wyse-build/output-$MODEL}
@@ -39,7 +43,7 @@ S() { ssh -n $K $D "PATH=\$PATH:/tmp/t/bin; $*"; }
 waitup() { sleep 20; for i in $(seq 40); do S true 2>/dev/null && break; sleep 5; done; tools; echo up; sleep 45; }
 
 echo "#### deploy"
-scripts/deploy.sh "$MODEL" "$IP" </dev/null 2>&1 | grep -E "md5|rebooting|FAIL|rror"
+scripts/deploy.sh "$NAME" "$IP" </dev/null 2>&1 | grep -E "md5|rebooting|FAIL|rror"
 waitup
 S 'grep -c "	00000000	" /proc/net/route; netbird status | grep -E "Management|Signal"; tailscale status | grep -c .
 for a in sv runsv runsvdir chroot renice cp; do command -v $a >/dev/null && echo "still there: $a"; done; true'

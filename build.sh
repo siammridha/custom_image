@@ -1,65 +1,67 @@
 #!/bin/sh
-# Build the image. Asks which Wyse model it is for, then builds it.
+# Build one image per device. Each device has its own file: keys/device.<any
+# name> with the model and host name, and its keys (made on the first build;
+# see scripts/device-keys.sh).
 #
-#   ./build.sh            asks for the model
-#   ./build.sh 3040       no question
-#   ./build.sh 3040 dev   development build: extra BusyBox commands for
-#                         scripts and SSH (busybox-dev.fragment). Never for
-#                         a device at a site.
+#   ./build.sh                     every keys/device.* file
+#   ./build.sh keys/device.shop1   only these devices (one or more files)
+#   ... dev                        development build: extra BusyBox commands
+#                                  for scripts and SSH (busybox-dev.fragment).
+#                                  Never for a device at a site.
 #
-# The full log goes to build.log. The first build of a model takes about an
-# hour; later builds only redo what changed.
+# Images go to /home/vscode/wyse-build/images/<host name>/. The full log of
+# the last build goes to build.log. The first build of a model takes about an
+# hour; later builds (and every further device) only redo what changed.
 set -eu
 cd "$(dirname "$0")"
 
-MODEL=${1:-}
-case ${2:-} in
-	"") DEV= ;;
-	dev) DEV=1 ;;
-	*) echo "usage: $0 [3040|5020] [dev]" >&2; exit 1 ;;
-esac
-while :; do
-	case $MODEL in
-		3040|5020) break ;;
-		"") ;;
-		*) echo "Unknown model: $MODEL" ;;
+DEV=
+FILES=
+for a in "$@"; do
+	case $a in
+		dev) DEV=1 ;;
+		*) [ -f "$a" ] || { echo "No such device file: $a" >&2; exit 1; }
+		   FILES="$FILES $a" ;;
 	esac
-	echo "Which model is the image for?"
-	echo "  1) Wyse 3040 (Intel Atom)"
-	echo "  2) Wyse 5020 (AMD)"
-	printf "Choose 1 or 2: "
-	read -r a || exit 1
-	case $a in 1|3040) MODEL=3040 ;; 2|5020) MODEL=5020 ;; *) MODEL=$a ;; esac
 done
+[ -n "$FILES" ] || FILES=$(ls keys/device.* 2>/dev/null || true)
+if [ -z "$FILES" ]; then
+	echo "No device files. Make one per device, for example keys/device.shop1:" >&2
+	printf '  3040\n  shop-01\n' >&2
+	echo "(model, then host name; the build adds the keys)" >&2
+	exit 1
+fi
 
 # Settings baked into the image.
 [ -f .env ] || { echo "No .env: copy .env.example to .env and fill it in." >&2; exit 1; }
 CA=$(sed -n 's/^ROOT_CA=//p' .env | tr -d '"\r')
 [ -z "$CA" ] || [ -f "$CA" ] || { echo "ROOT_CA in .env points to $CA, which does not exist." >&2; exit 1; }
 
-# This device's host name, baked into the image (keys/device.hostname).
-H=keys/device.hostname
-while ! grep -qE '^[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?$' $H 2>/dev/null; do
-	printf "Host name for this device (letters, digits and '-', max 63): "
-	read -r h || exit 1
-	echo "$h" > $H
-done
+# Check every file and make missing keys first, then build grouped by model
+# (devices of the same model reuse the same build folder).
+for f in $FILES; do scripts/device-keys.sh "$f"; done
+LIST=$(for f in $FILES; do echo "$(sed -n 1p "$f") $(sed -n 2p "$f") $f"; done | sort)
+echo "$LIST" | awk '{print $2}' | sort | uniq -d | grep . >&2 &&
+	{ echo "These host names are in more than one device file." >&2; exit 1; }
 
-echo "Building the Wyse $MODEL ${DEV:+development }image (log: build.log)..."
 start=$(date +%s)
-make MODEL=$MODEL DEV=$DEV > build.log 2>&1 &
-BUILD=$!
-# Progress bar (scripts/build-progress.sh) once the config exists.
-O=/home/vscode/wyse-build/output-$MODEL
-while kill -0 $BUILD 2>/dev/null && ! [ -f "$O/build/build-time.log" ]; do sleep 2; done
-kill -0 $BUILD 2>/dev/null && WYSE_BUILD_PID=$BUILD scripts/build-progress.sh "$MODEL" || true
-if ! wait $BUILD; then
-	tail -n 20 build.log
-	echo "Build failed. See build.log." >&2
-	exit 1
-fi
-
-O=/home/vscode/wyse-build/output-$MODEL/images
+echo "$LIST" | while read -r MODEL H F; do
+	echo "Building $H (Wyse $MODEL${DEV:+, development}) from $F (log: build.log)..."
+	make MODEL=$MODEL DEVICE="$F" DEV=$DEV > build.log 2>&1 &
+	BUILD=$!
+	# Progress bar (scripts/build-progress.sh) once the config exists.
+	O=/home/vscode/wyse-build/output-$MODEL
+	while kill -0 $BUILD 2>/dev/null && ! [ -f "$O/build/build-time.log" ]; do sleep 2; done
+	kill -0 $BUILD 2>/dev/null && WYSE_BUILD_PID=$BUILD scripts/build-progress.sh "$MODEL" < /dev/null || true
+	if ! wait $BUILD; then
+		tail -n 20 build.log
+		echo "Build of $H failed. See build.log." >&2
+		exit 1
+	fi
+	I=/home/vscode/wyse-build/images/$H
+	mkdir -p "$I" && chmod 700 "$I"
+	cp "$O/images/efi-part.vfat" "$O/images/rootfs.squashfs" "$O/images/disk.img" "$I/"
+	echo "  $H: $I"
+done
 echo "Done in $(( ($(date +%s) - start) / 60 )) min."
-echo "  Full disk image:  $O/disk.img"
-echo "  Install on a running device:  scripts/deploy.sh $MODEL [device-ip]"
+echo "  Install on a running device:  scripts/deploy.sh <host name> [device-ip]"
