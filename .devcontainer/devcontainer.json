@@ -11,9 +11,10 @@
     // from the existing image on next open.
     "runArgs": ["--rm"],
     // `|| true`: the folder may not be a git repo yet; runs again on every open.
-    // The update-index refresh clears the Buildroot symlinks that git lists as
-    // changed after a container start (see git.detectSubmodules below).
-    "postCreateCommand": "git config core.hooksPath hooks 2>/dev/null; git -C buildroot update-index -q --really-refresh >/dev/null 2>&1; true",
+    // The Mac file sharing reports symlink sizes as 0, so git reads Buildroot's
+    // symlinks as empty and lists them as changed (they work). Marking them
+    // assume-unchanged makes git stop checking them.
+    "postCreateCommand": "git config core.hooksPath hooks 2>/dev/null; git -C buildroot ls-files -s 2>/dev/null | awk '$1==120000{print $4}' | git -C buildroot update-index --assume-unchanged --stdin 2>/dev/null; true",
     // The build volume below is created owned by root.
     "postStartCommand": "sudo chown vscode:vscode /home/vscode/wyse-build",
     "remoteEnv": {
