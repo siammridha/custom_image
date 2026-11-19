@@ -8,3 +8,6 @@
 #define DROPBEAR_SVR_AGENTFWD 0
 /* The login banner (/etc/motd, written by post-build.sh). */
 #define DO_MOTD 1
+/* Dropbear shows only the first 2000 bytes; the banner with its color
+ * codes is bigger. */
+#define MOTD_MAXSIZE 4096

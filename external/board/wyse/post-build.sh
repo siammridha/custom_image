@@ -82,45 +82,59 @@ echo "alpine-minirootfs: $AF"
 
 rm -f "$T/usr/sbin/set-hostname"  # old images had it; Buildroot keeps old files
 
-# Login banner, shown by dropbear and by login (NetBird and Tailscale SSH).
-# A development build (BusyBox's fragment not empty, see the Makefile) says
-# so.
-L=' -----------------------------------------------------'
-# Terminal color codes: R reset; G green, Y yellow, C cyan, D grey,
-# W red.
+# Login banner, shown by dropbear and by login (NetBird and Tailscale SSH):
+# a vault door and "SentryVault" in light green and white-gray (256-color
+# codes). A development build (BusyBox's fragment not empty, see the
+# Makefile) says so. About 92 columns wide. In a subshell: its short
+# variable names are used elsewhere in this script.
+(
 E=$(printf '\033')
-R="$E[0m"; G="$E[1;32m"; Y="$E[33m"; C="$E[1;36m"; D="$E[90m"; W="$E[1;31m"
+c() { printf '%s[%s38;5;%sm' "$E" "$1" "$2"; }
+R="$E[0m"
+# Door: f frame, b bolts and hinges, r wheel ring, s spokes, a center,
+# H handle. Logo: G1-G4 "Sentry" greens, V1-V5 "Vault" grays, top to bottom.
+f=$(c '0;' 244); b=$(c '1;' 250); r=$(c '1;' 156); s=$(c '1;' 120)
+a=$(c '1;' 157); H=$(c '1;' 255)
+G1=$(c '1;' 157); G2=$(c '1;' 156); G3=$(c '1;' 120); G4=$(c '1;' 114)
+V1=$(c '1;' 255); V2=$(c '1;' 254); V3=$(c '1;' 252); V4=$(c '1;' 250); V5=$(c '1;' 248)
+# Text: D lines, K labels, N text, S commands, P /data, X red, Y yellow.
+D=$(c '0;' 242); K=$(c '0;' 246); N=$(c '1;' 252); S=$(c '1;' 120); P=$(c '1;' 156)
+X=$(c '1;' 203); Y=$(c '1;' 221)
+L=" -------------------------------------------------------------------------------------------"
+DEV=; DEVB=
+if [ -s "$BASE_DIR/busybox-build.fragment" ]; then
+	DEV="  $X[ DEV ]$R"; DEVB="  ${X}development$R"
+fi
+KV=$(ls "$T/lib/modules")
+BRV=$(sed -n 's/^VERSION_ID=//p' "$T/etc/os-release")
 {
 	echo
-	# The logo: shades of blue, light at the top to dark at the bottom
-	# (256-color codes).
-	set -- 117 111 75 69 33 27
-	while IFS= read -r l; do
-		printf '%s[1;38;5;%sm%s%s\n' "$E" "$1" "$l" "$R"
-		shift
-	done <<'EOF'
-__        __
-\ \      / /   _ ___  ___
- \ \ /\ / / | | / __|/ _ \
-  \ V  V /| |_| \__ \  __/
-   \_/\_/  \__, |___/\___|
-           |___/
-EOF
+	printf '%s\n' \
+		" ${f}.===============.${R}" \
+		"${b}[${f}| ${b}o ${r}.-------. ${b}o ${f}|${R}    ${G1} ____                _                ${V1}__     __               _  _${R}${DEV}" \
+		" ${f}| ${r}.'${s}\\   |   /${r}'. ${f}|${R}    ${G2}/ ___|   ___  _ __  | |_  _ __  _   _ ${V2}\\ \\   / /  __ _  _   _ | || |_${R}" \
+		" ${f}| ${r}|${s}--=( ${a}@${s} )=--${r}|${f} |${H}]=${R}  ${G3}\\___ \\  / _ \\| '_ \\ | __|| '__|| | | |${V3} \\ \\ / /  / _\` || | | || || __|${R}" \
+		" ${f}| ${r}'.${s}/   |   \\${r}.' ${f}|${R}    ${G3} ___) ||  __/| | | || |_ | |   | |_| |${V4}  \\ V /  | (_| || |_| || || |_${R}" \
+		"${b}[${f}| ${b}o ${r}'-------' ${b}o ${f}|${R}    ${G4}|____/  \\___||_| |_| \\__||_|    \\__, |${V5}   \\_/    \\__,_| \\__,_||_| \\__|${R}" \
+		" ${f}'==============='${R}    ${G4}                                |___/${R}"
 	echo "$D$L$R"
-	echo " ${G}Wyse $MODEL$R, built $(date +%Y-%m-%d)"
-	echo " Linux $(ls "$T/lib/modules"), Buildroot $(sed -n 's/^VERSION_ID=//p' "$T/etc/os-release")"
+	printf "  $K%-10s$N%-24s$K%-10s$N%s$R%s\n" Model "Wyse $MODEL" Built "$(date +%Y-%m-%d)" "$DEVB"
+	printf "  $K%-10s$N%-24s$K%-10s$N%s$R\n" Linux "$KV" Base "Buildroot $BRV"
 	echo "$D$L$R"
-	echo " The system is read-only and starts fresh at every boot."
-	echo " Only the ${C}/data$R partition is mutable."
-	echo " Software: ${Y}alpine apk add <package>$R   Apps: ${Y}alpine rc-status$R"
+	echo "  ${N}The system is read-only and starts fresh at every boot.$R"
+	echo "  ${N}Only the $P/data$N partition is mutable.$R"
+	echo
+	echo "  ${K}Software  ${S}alpine apk add <package>$R"
+	echo "  ${K}Apps      ${S}alpine rc-status$R"
 	echo "$D$L$R"
-	if [ -s "$BASE_DIR/busybox-build.fragment" ]; then
-		echo "$W=== WARNING! =========================================$R"
-		echo " Development build: has extra commands for testing."
-		echo " Do not install it on a device at a site."
+	if [ -n "$DEV" ]; then
+		echo "$X == WARNING: DEVELOPMENT BUILD =============================================================$R"
+		echo "  ${N}Has extra commands for testing, a root shell on the monitor and$R"
+		echo "  ${N}the test_lockup module. ${Y}Do not install it on a device at a site.$R"
 		echo "$D$L$R"
 	fi
 } > "$T/etc/motd"
+)
 
 # Development builds: a root shell on the monitor (tty1), no
 # password (root has none). The overlay copies inittab fresh each build.
