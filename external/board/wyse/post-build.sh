@@ -83,7 +83,7 @@ echo "alpine-minirootfs: $AF"
 rm -f "$T/usr/sbin/set-hostname"  # old images had it; Buildroot keeps old files
 
 # Login banner, shown by dropbear and by login (NetBird and Tailscale SSH):
-# a vault door and "SentryVault" in light green and white-gray (256-color
+# a vault door and "SentryVault" in green and white-gray (256-color
 # codes). A development build (BusyBox's fragment not empty, see the
 # Makefile) says so. About 92 columns wide. In a subshell: its short
 # variable names are used elsewhere in this script.
@@ -91,11 +91,9 @@ rm -f "$T/usr/sbin/set-hostname"  # old images had it; Buildroot keeps old files
 E=$(printf '\033')
 c() { printf '%s[%s38;5;%sm' "$E" "$1" "$2"; }
 R="$E[0m"
-# Door: f frame, b bolts and hinges, r wheel ring, s spokes, a center,
-# H handle. Logo: G1-G4 "Sentry" greens, V1-V5 "Vault" grays, top to bottom.
-f=$(c '0;' 244); b=$(c '1;' 250); r=$(c '1;' 156); s=$(c '1;' 120)
-a=$(c '1;' 157); H=$(c '1;' 255)
-G1=$(c '1;' 157); G2=$(c '1;' 156); G3=$(c '1;' 120); G4=$(c '1;' 114)
+# Door: f frame, b bolts and hinges, g wheel, H handle. Logo: g "Sentry",
+# V1-V5 "Vault" grays, top to bottom.
+f=$(c '0;' 244); b=$(c '1;' 250); g=$(c '1;' 120); H=$(c '1;' 255)
 V1=$(c '1;' 255); V2=$(c '1;' 254); V3=$(c '1;' 252); V4=$(c '1;' 250); V5=$(c '1;' 248)
 # Text: D lines, K labels, N text, S commands, P /data, X red, Y yellow.
 D=$(c '0;' 242); K=$(c '0;' 246); N=$(c '1;' 252); S=$(c '1;' 120); P=$(c '1;' 156)
@@ -111,12 +109,12 @@ BRV=$(sed -n 's/^VERSION_ID=//p' "$T/etc/os-release")
 	echo
 	printf '%s\n' \
 		" ${f}.===============.${R}" \
-		"${b}[${f}| ${b}o ${r}.-------. ${b}o ${f}|${R}    ${G1} ____                _                ${V1}__     __               _  _${R}${DEV}" \
-		" ${f}| ${r}.'${s}\\   |   /${r}'. ${f}|${R}    ${G2}/ ___|   ___  _ __  | |_  _ __  _   _ ${V2}\\ \\   / /  __ _  _   _ | || |_${R}" \
-		" ${f}| ${r}|${s}--=( ${a}@${s} )=--${r}|${f} |${H}]=${R}  ${G3}\\___ \\  / _ \\| '_ \\ | __|| '__|| | | |${V3} \\ \\ / /  / _\` || | | || || __|${R}" \
-		" ${f}| ${r}'.${s}/   |   \\${r}.' ${f}|${R}    ${G3} ___) ||  __/| | | || |_ | |   | |_| |${V4}  \\ V /  | (_| || |_| || || |_${R}" \
-		"${b}[${f}| ${b}o ${r}'-------' ${b}o ${f}|${R}    ${G4}|____/  \\___||_| |_| \\__||_|    \\__, |${V5}   \\_/    \\__,_| \\__,_||_| \\__|${R}" \
-		" ${f}'==============='${R}    ${G4}                                |___/${R}"
+		"${b}[${f}| ${b}o ${g}.-------. ${b}o ${f}|${R}    ${g} ____                _                ${V1}__     __               _  _${R}${DEV}" \
+		" ${f}| ${g}.'\\   |   /'. ${f}|${R}    ${g}/ ___|   ___  _ __  | |_  _ __  _   _ ${V2}\\ \\   / /  __ _  _   _ | || |_${R}" \
+		" ${f}| ${g}|--=( @ )=--|${f} |${H}]=${R}  ${g}\\___ \\  / _ \\| '_ \\ | __|| '__|| | | |${V3} \\ \\ / /  / _\` || | | || || __|${R}" \
+		" ${f}| ${g}'./   |   \\.' ${f}|${R}    ${g} ___) ||  __/| | | || |_ | |   | |_| |${V4}  \\ V /  | (_| || |_| || || |_${R}" \
+		"${b}[${f}| ${b}o ${g}'-------' ${b}o ${f}|${R}    ${g}|____/  \\___||_| |_| \\__||_|    \\__, |${V5}   \\_/    \\__,_| \\__,_||_| \\__|${R}" \
+		" ${f}'==============='${R}    ${g}                                |___/${R}"
 	echo "$D$L$R"
 	printf "  $K%-10s$N%-24s$K%-10s$N%s$R%s\n" Model "Wyse $MODEL" Built "$(date +%Y-%m-%d)" "$DEVB"
 	printf "  $K%-10s$N%-24s$K%-10s$N%s$R\n" Linux "$KV" Base "Buildroot $BRV"
