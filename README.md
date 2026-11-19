@@ -46,6 +46,24 @@ new VPN identities.
 - Running device: `scripts/deploy.sh <host name>`. Keeps `/data`.
   Refuses if the device's BIOS model name is not the device file's model.
 
+## Updates
+
+The main system (Linux, NetBird, Tailscale, ...) only changes with a new
+image. To see which parts have a newer release, and what changed since your
+version:
+
+    scripts/check-updates.sh
+
+To change a part's version (with its checksum):
+
+    scripts/set-version.sh <linux|netbird|tailscale|go|linux-firmware|buildroot> <version>
+
+Parts marked "Buildroot" change when Buildroot is updated. Parts marked
+"next build" (the Alpine archive, sof-firmware, OpenRC) update by themselves
+at every build. Rust: `rustup update` in the dev container. After a change:
+build, deploy to a test device and run `scripts/test-device.sh <host name>`
+before putting it on devices at sites.
+
 ## Alpine subsystem
 
 The device has a second, small system: Alpine Linux in `/data/alpine`. It

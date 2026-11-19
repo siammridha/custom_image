@@ -68,6 +68,10 @@ User's rules for the image:
   writes them into the image (run by build.sh and post-build.sh).
 - `scripts/deploy.sh <host name>` puts a built image on a running
   device over SSH (IP: `address` in its device file).
+- `scripts/check-updates.sh` shows which parts of the image have a newer
+  release and their release notes. `scripts/set-version.sh <part> <version>`
+  changes the version and checksum of linux, netbird, tailscale, go,
+  linux-firmware or buildroot.
 
 # Disk and boot
 
