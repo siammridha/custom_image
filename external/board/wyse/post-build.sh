@@ -147,7 +147,7 @@ rm -rf "$T/var/lib/tailscale" "$T/var/lib/netbird" "$T/etc/wyse/dropbear" "$T/et
 # The dropbear package's link (to /var/run/dropbear); the key is elsewhere.
 rm -rf "$T/etc/dropbear"
 ln -snf /var/run/dropbear "$T/etc/dropbear"
-"$B/../../../scripts/device-keys.sh" "$DF" "$T"
+NB_URL=$NB_URL "$B/../../../scripts/device-keys.sh" "$DF" "$T"
 
 # Kernel modules: the system's own (IMAGE_MODULES) and the model's drivers
 # (modules-<model>), each with every module it needs. The kernel builds

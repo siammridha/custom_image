@@ -18,7 +18,8 @@
 # keeps its NetBird and Tailscale peer. File formats follow the programs'
 # source:
 #   - NetBird 0.83.1 default.json: PrivateKey and SSHKey (PKCS8 PEM, as Go's
-#     x509.MarshalPKCS8PrivateKey makes it); NetBird fills in the rest.
+#     x509.MarshalPKCS8PrivateKey makes it), and the settings (below);
+#     NetBird fills in the rest.
 #   - Tailscale 1.104.7 tailscaled.state (FileStore: JSON map, values base64).
 #     WireGuard and Tailscale keys are clamped like clamp25519Private
 #     (types/key/util.go); Tailscale doesn't clamp keys it loads.
@@ -89,8 +90,14 @@ PUB=$(echo "$DER" | xxd -r -p | "${OPENSSL:-$HOST_DIR/bin/openssl}" pkey -inform
 	-pubout -outform DER | tail -c 32 | xxd -p -c 64)
 hex32 "$PUB" || die "openssl could not compute the SSH public key"
 
-printf '{\n    "PrivateKey": "%s",\n    "SSHKey": "-----BEGIN PRIVATE KEY-----\\n%s\\n-----END PRIVATE KEY-----\\n"\n}\n' \
-	"$NB" "$(echo "$DER" | b64)" | put /var/lib/netbird/default.json
+# Also the settings vpn-guard's "up" uses (wyse-init/src/config.rs
+# NB_UP_ARGS), so the daemon connects with them at start. Field names: NetBird
+# 0.83.1 client/internal/profilemanager/config.go; ManagementURL is a Go
+# url.URL, saved as its fields.
+U=${NB_URL:?NB_URL (netbird_url) is needed to write default.json}
+NB_SCHEME=${U%%://*}; NB_HOST=${U#*://}; NB_HOST=${NB_HOST%%/*}
+printf '{\n    "PrivateKey": "%s",\n    "SSHKey": "-----BEGIN PRIVATE KEY-----\\n%s\\n-----END PRIVATE KEY-----\\n",\n    "ManagementURL": {"Scheme": "%s", "Host": "%s"},\n    "ServerSSHAllowed": true,\n    "EnableSSHRoot": true,\n    "DisableDNS": true,\n    "NetworkMonitor": true\n}\n' \
+	"$NB" "$(echo "$DER" | b64)" "$NB_SCHEME" "$NB_HOST" | put /var/lib/netbird/default.json
 printf '{\n    "_machinekey": "%s"\n}\n' "$(printf %s "$TS" | base64 | tr -d '\n')" |
 	put /var/lib/tailscale/tailscaled.state
 echo "0000000b7373682d6564323535313900000040$SSH$PUB" | xxd -r -p | put /etc/wyse/dropbear_host_key

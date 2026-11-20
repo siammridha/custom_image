@@ -1,5 +1,6 @@
 //! vpn-guard: keeps NetBird (main) and Tailscale (backup) logged in and
-//! connected. Every 30 s:
+//! connected. NetBird connects by itself at start (settings in the image's
+//! default.json). First pass as soon as the daemons answer, then every 30 s:
 //!   - not connected or logged out: run "up" again (also the first login)
 //!   - one down for 10 min: restart that daemon (init starts it again)
 //!   - both down for 30 min: reboot (a fresh boot clears everything else)
@@ -30,9 +31,10 @@ impl Guard {
             .any(|l| l.starts_with("Management: Connected"))
     }
 
-    /// "up" does not apply new settings while connected ("Already
-    /// connected"), so the first "up" of each boot disconnects first.
-    fn nb_up(&self, first: bool) -> bool {
+    /// Only when NetBird is not connected: the daemon connects by itself
+    /// with the image's default.json (scripts/device-keys.sh), so this is
+    /// the first login of a new device (setup key) or a reconnect.
+    fn nb_up(&self) {
         // --network-monitor (off by default on Linux): reconnect as soon as
         // the default route changes, not after its server connection times
         // out (up to 40 s, then retries up to 15 s apart).
@@ -46,10 +48,7 @@ impl Guard {
             a.extend(["--management-url".into(), config::NB_MANAGEMENT_URL.into()]);
         }
         a.extend(config::NB_UP_ARGS.iter().map(|s| s.to_string()));
-        if first {
-            self.cmd("netbird", vec!["down".into()], 30);
-        }
-        self.cmd("netbird", a, 60).0
+        self.cmd("netbird", a, 60);
     }
 
     fn ts_status(&self) -> String {
@@ -112,13 +111,20 @@ pub fn main() -> ! {
     let g = Guard { hostname: config::HOSTNAME };
 
     let t = sys::uptime();
-    let (mut nb_last, mut nb_restart, mut nb_done) = (t, t, false);
+    let (mut nb_last, mut nb_restart) = (t, t);
     let (mut ts_last, mut ts_restart, mut ts_done) = (t, t, false);
     let mut any_last = t;
     let mut no_route = false;
+    // The daemons start with vpn-guard. Wait (up to 20 s) until tailscaled
+    // answers and NetBird has connected by itself, so the first pass does
+    // not run "up" while NetBird is still connecting.
+    for _ in 0..20 {
+        if g.nb_ok() && !g.ts_status().is_empty() {
+            break;
+        }
+        sys::sleep(1);
+    }
     loop {
-        sys::sleep(30);
-
         if has_default_route(&fs::read_to_string("/proc/net/route").unwrap_or_default()) {
             no_route = false;
         } else {
@@ -129,8 +135,8 @@ pub fn main() -> ! {
             sys::kill_name("udhcpc", sys::SIGUSR1);
         }
 
-        if (!nb_done || !g.nb_ok()) && g.nb_up(!nb_done) {
-            nb_done = true;
+        if !g.nb_ok() {
+            g.nb_up();
         }
         let t = sys::uptime();
         if g.nb_ok() {
@@ -169,6 +175,7 @@ pub fn main() -> ! {
         }
 
         trim_logs();
+        sys::sleep(30);
     }
 }
 

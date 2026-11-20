@@ -31,9 +31,9 @@ pub const NB_MANAGEMENT_URL: &str = match option_env!("WYSE_NB_MANAGEMENT_URL") 
 /// Network Routes, 0.0.0.0/0, this peer as routing peer.
 /// --disable-dns: NetBird leaves /etc/resolv.conf alone (DNS from DHCP), so
 /// name lookups work even when NetBird is down.
-/// --disable-auto-connect: the daemon waits for vpn-guard, which connects
-/// with these settings, so they are applied on every boot.
-pub const NB_UP_ARGS: &[&str] = &["--allow-server-ssh", "--enable-ssh-root", "--disable-dns", "--disable-auto-connect"];
+/// The same settings are in the image's default.json (scripts/device-keys.sh),
+/// so the daemon connects with them at start; these are for vpn-guard's "up".
+pub const NB_UP_ARGS: &[&str] = &["--allow-server-ssh", "--enable-ssh-root", "--disable-dns"];
 
 /// Tailscale SSH on. No exit node. No Tailscale firewall rules: they drop
 /// all traffic from 100.64.0.0/10 that does not come in over Tailscale, and
