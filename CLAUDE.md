@@ -31,7 +31,9 @@ Tailscale as backup) must always come back up.
 User's rules for the image:
 - Remove everything the device does not use, down to a single file or
   character. Every saved byte counts as a gain, however small; whatever is
-  needed later gets installed (`alpine apk add ...`).
+  needed later gets installed (`alpine apk add ...`). Small means
+  removing what this project does not need, not packing the image
+  smaller (compression).
 - Smaller than Alpine. All software built from source; driver firmware
   binaries are OK.
 - Built in: Tailscale, NetBird, the private root CA, the SSH keys.

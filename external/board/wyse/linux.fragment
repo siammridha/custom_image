@@ -5,8 +5,11 @@ CONFIG_EFI_PARTITION=y
 CONFIG_DEVTMPFS=y
 CONFIG_DEVTMPFS_MOUNT=y
 CONFIG_SQUASHFS=y
-CONFIG_SQUASHFS_XZ=y
-CONFIG_SQUASHFS_ZSTD=y
+# Root is not packed (mksquashfs -no-compression), but its header still says
+# gzip, and the kernel refuses to mount a type it does not support.
+CONFIG_SQUASHFS_ZLIB=y
+# CONFIG_SQUASHFS_XZ is not set
+# CONFIG_SQUASHFS_ZSTD is not set
 CONFIG_OVERLAY_FS=y
 CONFIG_EXT4_FS=y
 CONFIG_VFAT_FS=y
