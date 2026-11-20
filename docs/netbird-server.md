@@ -1,108 +1,86 @@
-# NetBird server: slow "offline" in the dashboard
+# NetBird server
 
-Status: open. A workaround is on the server; the real fix (port 33073) is
-not done yet.
+The self-hosted NetBird server: Docker Compose on Alpine (`root@192.168.10.199`,
+files in `/root`). The local copy is `netbird_server_config/` (git-ignored: it
+holds secrets). `netbird_server_config/push.sh` copies the changed files to the
+server and sets their owner and modes; it does not pull images or restart
+anything (run `docker compose up -d` on the server after).
 
-## The problem
+## Ports
 
-When a device loses its network (cable pulled, power cut, internet down),
-the NetBird dashboard kept showing it connected for 15–20 minutes.
-Tailscale shows it offline at once.
+All traffic goes through Traefik.
 
-## Why
+| Port | Open to the internet | What |
+|------|------|------|
+| 4478 TCP | yes | Management gRPC, passed through to `management:33073` |
+| 4477 TCP | yes | Signal, relay, logins (`/oauth2`) |
+| 4477 UDP | yes | STUN (relay) |
+| 443 | no | Dashboard, management API, web socket, video, Arcane |
+| 80 | no | Redirect to 443 |
 
-The server setup (Docker Compose): Traefik takes all traffic on port 4478
-and sends it to signal, relay and management by path. Device traffic goes
-to `management:80`, together with the dashboard API and logins.
+Through 4477, `/api` and Arcane give 404: they only answer on 443.
 
-1. The management server checks each device every 5 s (gRPC keepalive,
-   5 s, then 2 s to answer). This check only runs on its separate gRPC
-   port, 33073. On port 80 it serves web and gRPC on one port through Go's
-   web server (`ServeHTTP`), and the check does not run there.
-   Source: `management/internals/server/server.go` (`serveGRPC` for 33073,
-   `serveGRPCWithHTTP` for the main port). Same in 0.66.4 and 0.83.1.
-2. Traefik sits between the device and management. Even on the right port,
-   Traefik would answer the check itself, so management would never learn
-   that the device is gone.
-3. A device that loses its network sends nothing. Traefik only notices
-   when Linux gives up resending data to it: 15 tries, about 15 minutes
-   (`net.ipv4.tcp_retries2`). Then Traefik closes its connection to
-   management, and management marks the device offline.
+Devices use `netbird_url = https://netbird.sentryvault.com:4478`
+(`config/network`). The server's own client (`netbird-client`) uses the same
+URL, with `netbird.sentryvault.com` pointing to 127.0.0.1.
 
-## Workaround in place (tested)
+## Management gRPC on 4478
 
-In `server.yml`, `traefik` service:
+The management server checks each device every 5 s and gives it 2 s to
+answer (gRPC keepalive). This check only runs on its gRPC-only port 33073,
+not on port 80, where it serves web and gRPC together
+(`management/internals/server/server.go`: `serveGRPC` for 33073,
+`serveGRPCWithHTTP` for the main port).
 
-```yaml
-    sysctls:
-      - net.ipv4.tcp_retries2=6
-```
+So Traefik passes port 4478 to 33073 as TCP: it does the TLS and forwards the
+bytes without reading them, so the check reaches the device. Expected: a
+device that loses its network shows offline in about 7 s. Not timed yet.
 
-Linux in the Traefik container gives up after 6 tries (about 25 s) instead
-of 15. It only affects the Traefik container.
+Before this, device traffic went through Traefik's HTTP router to port 80.
+Traefik answered the check itself, and the dashboard showed a dead device
+connected for 15–20 minutes (until Linux gave up resending, 15 tries).
+`net.ipv4.tcp_retries2=6` on the Traefik container cut that to about 2
+minutes (tested 2026-11-18). It is kept as a backup.
 
-Test (2026-11-18): device network cut at 04:54:46 UTC; dashboard showed it
-offline at about 04:56:45, so about 2 minutes. The 25 s only starts once
-Traefik has something to send to the device.
+The 4478 route is in `traefik/dynamic.yml` (Traefik's file provider), not in
+management's Docker labels. Labels disappear while management restarts.
+A client that connected in that gap got a 404 page from Traefik (TLS still
+worked, since the certificate is shared) and stayed stuck on that
+connection: its health check failed, but it did not reconnect. With the route
+in the file, the connection just fails and the client tries again. Tested:
+after a management restart, the server's client reconnected in 3.5 s.
 
-## Planned fix: port 33073
+## Settings
 
-Send device traffic to management's port 33073 through a Traefik TCP
-router. A TCP router passes the bytes through without reading them, so the
-server's 5 s check reaches the device. Expected: offline after about 7 s.
+- `management/config.json`: `"ReverseProxy": {"TrustedPeers": ["127.0.0.1/32"]}`.
+  With no value, management trusts `X-Forwarded-For` from anyone (0.0.0.0/0)
+  and logs a warning. Nothing here needs it, so only 127.0.0.1 is trusted.
+- Management runs with `--disable-anonymous-metrics=true` (no usage data sent
+  to NetBird).
+- Every image has a fixed version except `simple_rtc:latest`.
+- Log levels: info for NetBird, error for Traefik.
 
-It needs its own port: a TCP router for `netbird.sentryvault.com` on 4478
-would take all traffic on that port, and signal, relay and the API would
-stop working. (Another way: a second host name on 4478, for example
-`mgmt.sentryvault.com`, passed through by name. That needs DNS, a
-certificate and a hosts entry on the devices.)
+## Secrets
 
-Management already listens on 33073 (it opens it by itself next to port
-80). It has no TLS certificate in this setup, so 33073 is plain gRPC;
-Traefik does the TLS.
+Not in this repo. On the server, all are root only (mode 600):
+- `netbird_setup_key` (Docker secret for the server's client)
+- `relay.env` (`NB_AUTH_SECRET`) and `management/config.json` (relay secret,
+  `DataStoreEncryptionKey`)
+- `arcane.env` (`ARCANE_ENCRYPTION_KEY`)
+- `step-ca-data/password`, `step-ca-data/secrets/password` (owned by uid
+  1000, the user step-ca runs as)
 
-1. `traefik` service:
+## Arcane
 
-   ```yaml
-       ports:
-         - "33073:33073"   # TCP — Management gRPC, passed through
-       command:
-         - --entrypoints.mgmt.address=:33073
-   ```
+Docker web UI at `https://arcane.sentryvault.com`, local only (port 443).
+It runs as root and mounts `/root`, so it can edit this compose project.
 
-   Both numbers must be 33073: `"33073:4478"` would send the traffic to the
-   existing HTTP entry point, and nothing would change.
+## Router
 
-2. `management` service, labels (keep the existing ones):
-
-   ```yaml
-         - traefik.tcp.routers.netbird-mgmt-tcp.rule=HostSNI(`netbird.sentryvault.com`)
-         - traefik.tcp.routers.netbird-mgmt-tcp.entrypoints=mgmt
-         - traefik.tcp.routers.netbird-mgmt-tcp.tls=true
-         - traefik.tcp.routers.netbird-mgmt-tcp.tls.certresolver=stepca
-         - traefik.tcp.routers.netbird-mgmt-tcp.service=netbird-mgmt-tcp
-         - traefik.tcp.services.netbird-mgmt-tcp.loadbalancer.server.port=33073
-   ```
-
-3. Router/firewall: forward TCP 33073 to the server, like 4478.
-
-4. Devices: in `config/network` set
-   `netbird_url = https://netbird.sentryvault.com:33073`,
-   then build and deploy. post-build.sh writes it to the device as
-   `NB_MANAGEMENT_URL`. The device keeps its NetBird identity. Signal and
-   relay stay on 4478 (management tells the device their addresses).
-
-5. Optional: the server's own client (`netbird-client` in `server.yml`)
-   can use `NB_MANAGEMENT_URL=https://netbird.sentryvault.com:33073` too.
-
-Not tested yet. To check:
-- The device connects on 33073 (`netbird status`: Management Connected).
-- gRPC needs HTTP/2 agreed during TLS (ALPN `h2`); check that Traefik's
-  TCP router offers it.
-- Cut the device's network (`alpine ip link set eth0 down; sleep 300;
-  alpine ip link set eth0 up`, run in the background on the device) and
-  time the dashboard. Expected: offline in about 7 s.
-- After it works, `tcp_retries2=6` can stay as a backup or be removed.
+Netgear Nighthawk R7000P, firmware V1.3.3.154_10.1.86. This firmware has no
+Remote Management option (Web Services Management shows only local HTTPS).
+Tested from outside (2026-11-20): ports 80 and 8443 on the public IP time
+out; 4477 answers.
 
 ## Related
 
