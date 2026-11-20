@@ -25,7 +25,8 @@ The first build of a model takes about an hour; later builds only redo what
 changed, and every further device of the same model takes minutes. The full
 log is in `build.log`.
 
-The images are in `/home/vscode/wyse-build/images/<host name>/` (`disk.img`).
+The images are in `/home/vscode/wyse-build/images/<host name>/` (`efi-part.vfat` and `rootfs.squashfs` for deploy,
+`disk.img.gz` for install: the whole disk, packed).
 Images of different models differ in their kernel drivers. The drivers a
 model uses are in the image (`external/board/wyse/modules-<model>`) and
 load at boot; only the firmware files on `firmware-<model>` are kept.
@@ -42,7 +43,10 @@ new VPN identities.
 
 ## Install
 
-- New device: write `disk.img` to its eMMC.
+- Device running Linux with SSH (Alpine, or this image):
+  `scripts/install.sh <host name>`. Writes the whole disk and its partitions;
+  erases `/data`. Sends `disk.img.gz` (about 43 MB) and asks for the host
+  name first.
 - Running device: `scripts/deploy.sh <host name>`. Keeps `/data`.
   Refuses if the device's BIOS model name is not the device file's model.
 

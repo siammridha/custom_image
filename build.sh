@@ -58,7 +58,10 @@ echo "$LIST" | while read -r MODEL H F; do
 	fi
 	I=/home/vscode/wyse-build/images/$H
 	mkdir -p "$I" && chmod 700 "$I"
-	cp "$O/images/efi-part.vfat" "$O/images/rootfs.squashfs" "$O/images/disk.img" "$I/"
+	cp "$O/images/efi-part.vfat" "$O/images/rootfs.squashfs" "$I/"
+	# Whole disk for scripts/install.sh, packed: 638 MB, mostly empty.
+	rm -f "$I/disk.img"
+	gzip -c "$O/images/disk.img" > "$I/disk.img.gz"
 	echo "  $H: $I"
 done
 echo "Done in $(( ($(date +%s) - start) / 60 )) min."

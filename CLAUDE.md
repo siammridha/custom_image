@@ -70,6 +70,8 @@ User's rules for the image:
   writes them into the image (run by build.sh and post-build.sh).
 - `scripts/deploy.sh <host name>` puts a built image on a running
   device over SSH (IP: `address` in its device file).
+  `scripts/install.sh <host name>` writes the whole `disk.img.gz` over SSH
+  (first install from Alpine, or a full reinstall; erases `/data`).
 - `scripts/check-updates.sh` shows which parts of the image have a newer
   release and their release notes. `scripts/set-version.sh <part> <version>`
   changes the version and checksum of linux, netbird, tailscale, go,
@@ -171,7 +173,8 @@ Partitions: p1 EFI/boot (64M at 1M), p2 read-only squashfs root (512M at
   `ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null root@<ip>`.
   No scp on the device; copy with `ssh ... 'cat > file' < file`.
 - Deploy: `scripts/deploy.sh <host name>` (keeps `/data`). It writes only p1 and
-  p2, so it can't change the partition layout.
+  p2, so it can't change the partition layout. `scripts/install.sh` can (erases
+  `/data`).
 - The image's busybox has no ls, grep, head, sleep, mv, chmod, gzip and more
   (only what the image uses). Use `alpine <cmd>`; scripts bring Alpine's
   busybox from the Alpine archive in the download folder. Unpack `.tar.gz` files with
