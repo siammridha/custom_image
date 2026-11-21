@@ -44,7 +44,7 @@ not touch the others:
 - Data is in volumes, not folders, so Arcane can back it up: `step-ca-data`
   (the CA) and `netbird-management` (NetBird's database). They were moved
   from `step-ca/data` and `netbird/management/data` on 2026-11-20; those
-  folders are still on the server as a fallback.
+  folders were deleted on 2026-11-21 (both are in the backups below).
 - traefik and netbird-client read step-ca's root certificate from the
   `certs` folder of `step-ca-data` (volume `subpath`, read-only).
 - Logs: every container keeps one file of at most 5 MB (`docker logs <name>`
@@ -140,6 +140,10 @@ after a management restart, the server's client reconnected in 3.5 s.
   a wrong outside address, so they could not connect P2P. With Cloudflare's
   they do (tested 2026-11-21). The relay still answers STUN on 4477; no one
   is told to use it.
+- traefik: `aliasHeadersStrategy=delete` on every entry point. It drops
+  request headers with `_` or `.` in the name (`X_Auth_User`), which some
+  backends read as `X-Auth-User`. None of ours do; without the setting
+  traefik 3.7 logs a warning per entry point at every start.
 - Management runs with `--disable-anonymous-metrics=true` (no usage data sent
   to NetBird).
 - Every image has a fixed version except `simple_rtc:latest`.
