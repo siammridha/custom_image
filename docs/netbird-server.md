@@ -12,23 +12,43 @@ not touch the others:
 
 | Folder | Containers | Other files |
 |------|------|------|
-| `step-ca/` | step-ca | `data/` (the CA, only on the server) |
+| `step-ca/` | step-ca | `password` (only on the server) |
 | `traefik/` | traefik | `dynamic.yml` |
-| `netbird/` | management, signal, relay, dashboard | `management/`, `dashboard.env`, `relay.env` |
+| `netbird/` | management, signal, relay, dashboard | `management/config.json`, `dashboard.env`, `relay.env` |
 | `netbird-client/` | netbird-client | `netbird_setup_key` |
 | `simple-rtc/` | simple-rtc | |
 | `arcane/` | arcane | `arcane.env` |
 
-- All join the Docker network `netbird`, and use volumes with fixed names
-  (`traefik-certs`, `netbird-client`, `rtc-diag`, `arcane-data`). Both are
-  marked `external` in every project: a project never makes or deletes them.
-  If the network is gone: `docker network create netbird`.
+- Each app has its own Docker network: `netbird`, `step-ca`, `simple-rtc`,
+  `arcane`, `netbird-client`. Only traefik joins all 5, so the apps can't reach each other,
+  only traefik (tested: simple-rtc and management can't open each other or
+  Arcane). No port is opened on the server except traefik's; Docker also
+  drops traffic from other machines to container addresses.
+- On each network, traefik has an alias for the public name of the app there
+  (`netbird.sentryvault.com` on `netbird`, ...), so NetBird's own calls to
+  its public address go to traefik. On `step-ca` it has all 3 names: step-ca
+  checks each certificate by connecting to its name, and without the alias
+  the name resolves to a public address and renewals fail.
+  Certificates last 24 h.
+- Apps with traefik labels outside `netbird` set `traefik.docker.network`
+  (traefik's default is `netbird`).
+- Networks and the volumes (`step-ca-data`, `netbird-management`,
+  `traefik-certs`, `netbird-client`, `rtc-diag`,
+  `arcane-data`) are marked `external` in every project: a project never makes
+  or deletes them. If one is gone: `docker network create <name>` or
+  `docker volume create <name>`.
 - Projects can't wait for each other (no `depends_on` between them). Every
   container has `restart: unless-stopped` and the NetBird parts retry, so the
   start order does not matter. The NetBird containers have no `depends_on`
   either, so recreating one of them leaves the others running.
-- traefik and netbird-client read step-ca's root certificate from
-  `../step-ca/data/certs`.
+- Data is in volumes, not folders, so Arcane can back it up: `step-ca-data`
+  (the CA) and `netbird-management` (NetBird's database). They were moved
+  from `step-ca/data` and `netbird/management/data` on 2026-11-20; those
+  folders are still on the server as a fallback.
+- traefik and netbird-client read step-ca's root certificate from the
+  `certs` folder of `step-ca-data` (volume `subpath`, read-only).
+- Logs: every container keeps one file of at most 5 MB (`docker logs <name>`
+  or Arcane), level info where the program has a setting.
 - Restart only what changed: in Arcane, or
   `cd /root/<folder> && docker compose up -d`.
 - Backup before the split (2026-11-20): `/var/backups/server-before-split-2026-11-20.tar.gz`
@@ -50,7 +70,38 @@ Through 4477, `/api` and Arcane give 404: they only answer on 443.
 
 Devices use `netbird_url = https://netbird.sentryvault.com:4478`
 (`config/network`). The server's own client (`netbird-client`) uses the same
-URL, with `netbird.sentryvault.com` pointing to 127.0.0.1.
+URL; on its network the name points to traefik.
+
+Only the home network (192.168.0.0/16) may open the dashboard, its API and
+Arcane: traefik middleware `lan-only` in `traefik/dynamic.yml`. Video has no
+such limit.
+
+## The server's NetBird client
+
+`netbird-client` runs on its own Docker network (`netbird-client`), not on the
+server's network, so NetBird peers that connect to it (100.80.169.56) reach
+nothing on the server. Its one job: routing peer for video.
+
+- NetBird dashboard: Network `Simple-RTC`, routing peer `docker-host` (this
+  client), resource `172.22.0.10/32` port 443: traefik's fixed address on the
+  `netbird-client` network (`ipv4_address` in `traefik/docker-compose.yml`;
+  the network was made with `docker network create --subnet 172.22.0.0/16
+  netbird-client`). The client passes that traffic on to traefik, which sees
+  it from the client's 172.22.x address, so `lan-only` lets only video through.
+- The server itself is not reachable over NetBird. SSH to it on the home
+  network.
+- fdstower (remote site, Alpine, NetBird 0.83.2) uses this route. Devices on
+  its local network reach `video.sentryvault.com`: their DNS points the name
+  to fdstower, where a relay on port 443 sends it to `172.22.0.10:443`.
+  Tested 2026-11-20.
+- The client sets `src_valid_mark` and `rp_filter` through compose
+  (`sysctls`, and `com.docker.network.endpoint.sysctls` for its own
+  interface): NetBird wants these values and can't write `/proc/sys` in a
+  container.
+- Harmless errors in its log at every start: relay over QUIC can't read the
+  relay address (`.../4477/relay`) and uses WebSocket; "failed to restore host
+  DNS settings" (DNS management is off for it, and it never changed
+  `/etc/resolv.conf`).
 
 ## Management gRPC on 4478
 
@@ -86,7 +137,7 @@ after a management restart, the server's client reconnected in 3.5 s.
 - Management runs with `--disable-anonymous-metrics=true` (no usage data sent
   to NetBird).
 - Every image has a fixed version except `simple_rtc:latest`.
-- Log levels: info for NetBird, error for Traefik.
+- Log levels: info for all.
 
 ## Secrets
 
@@ -95,7 +146,8 @@ Not in this repo. On the server, all are root only (mode 600):
 - `netbird/relay.env` (`NB_AUTH_SECRET`) and `netbird/management/config.json` (relay secret,
   `DataStoreEncryptionKey`)
 - `arcane/arcane.env` (`ARCANE_ENCRYPTION_KEY`)
-- `step-ca/data/password`, `step-ca/data/secrets/password` (owned by uid
+- `step-ca/password` (used only when the CA is first made), and in the
+  `step-ca-data` volume `password` and `secrets/password` (owned by uid
   1000, the user step-ca runs as)
 
 ## Arcane
@@ -118,6 +170,21 @@ Image updates:
 - After updating in Arcane, the server's compose files are newer than
   `netbird_server_config/`: copy them back before running `push.sh`, or it
   puts the old tags back.
+
+Vulnerability scans (Trivy, in Arcane):
+- `netbird_server_config/security-report.sh` copies the latest scan into
+  `security-report/<date>/`: `report.txt` (every finding with description),
+  `findings.csv`, and Trivy's full JSON report per image. It reads only the
+  vulnerability tables, from a copy of Arcane's database.
+- The report lists every image on the server, old ones too: delete unused
+  images to drop their findings.
+- Trivy keeps its vulnerability list (about 1.7 GB) in the volume
+  `arcane-trivy-cache`; it can be deleted and is downloaded again at the
+  next scan.
+- 2026-11-21: traefik v3.6.8 → v3.7.19 (no findings) and step-ca 0.29.0 →
+  0.30.2 (newest, still 7 critical: old Alpine packages and Go libraries).
+  CA data backup before the update:
+  `/var/backups/step-ca-data-2026-11-20.tar.gz`.
 
 ## Router
 
