@@ -134,6 +134,12 @@ after a management restart, the server's client reconnected in 3.5 s.
 - `netbird/management/config.json`: `"ReverseProxy": {"TrustedPeers": ["127.0.0.1/32"]}`.
   With no value, management trusts `X-Forwarded-For` from anyone (0.0.0.0/0)
   and logs a warning. Nothing here needs it, so only 127.0.0.1 is trusted.
+- STUN for peers (`Stuns` in `management/config.json`) and simple-rtc
+  (`STUN_SERVER`): `stun:stun.cloudflare.com:3478`. With our own STUN
+  (4477), peers on the home network reached it through the router and got
+  a wrong outside address, so they could not connect P2P. With Cloudflare's
+  they do (tested 2026-11-21). The relay still answers STUN on 4477; no one
+  is told to use it.
 - Management runs with `--disable-anonymous-metrics=true` (no usage data sent
   to NetBird).
 - Every image has a fixed version except `simple_rtc:latest`.
