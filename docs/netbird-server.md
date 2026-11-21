@@ -1,10 +1,38 @@
 # NetBird server
 
-The self-hosted NetBird server: Docker Compose on Alpine (`root@192.168.10.199`,
-files in `/root`). The local copy is `netbird_server_config/` (git-ignored: it
-holds secrets). `netbird_server_config/push.sh` copies the changed files to the
-server and sets their owner and modes; it does not pull images or restart
-anything (run `docker compose up -d` on the server after).
+The self-hosted NetBird server: Docker Compose on Alpine (`root@192.168.10.199`).
+The local copy is `netbird_server_config/` (git-ignored: it holds secrets).
+`netbird_server_config/push.sh` copies the changed files to the server and
+sets their owner and modes; it does not pull images or restart anything.
+
+## Projects
+
+Each folder in `/root` is its own compose project, so a restart of one does
+not touch the others:
+
+| Folder | Containers | Other files |
+|------|------|------|
+| `step-ca/` | step-ca | `data/` (the CA, only on the server) |
+| `traefik/` | traefik | `dynamic.yml` |
+| `netbird/` | management, signal, relay, dashboard | `management/`, `dashboard.env`, `relay.env` |
+| `netbird-client/` | netbird-client | `netbird_setup_key` |
+| `simple-rtc/` | simple-rtc | |
+| `arcane/` | arcane | `arcane.env` |
+
+- All join the Docker network `netbird`, and use volumes with fixed names
+  (`traefik-certs`, `netbird-client`, `rtc-diag`, `arcane-data`). Both are
+  marked `external` in every project: a project never makes or deletes them.
+  If the network is gone: `docker network create netbird`.
+- Projects can't wait for each other (no `depends_on` between them). Every
+  container has `restart: unless-stopped` and the NetBird parts retry, so the
+  start order does not matter. The NetBird containers have no `depends_on`
+  either, so recreating one of them leaves the others running.
+- traefik and netbird-client read step-ca's root certificate from
+  `../step-ca/data/certs`.
+- Restart only what changed: in Arcane, or
+  `cd /root/<folder> && docker compose up -d`.
+- Backup before the split (2026-11-20): `/var/backups/server-before-split-2026-11-20.tar.gz`
+  on the server, and a copy in `netbird_server_config/`.
 
 ## Ports
 
@@ -52,7 +80,7 @@ after a management restart, the server's client reconnected in 3.5 s.
 
 ## Settings
 
-- `management/config.json`: `"ReverseProxy": {"TrustedPeers": ["127.0.0.1/32"]}`.
+- `netbird/management/config.json`: `"ReverseProxy": {"TrustedPeers": ["127.0.0.1/32"]}`.
   With no value, management trusts `X-Forwarded-For` from anyone (0.0.0.0/0)
   and logs a warning. Nothing here needs it, so only 127.0.0.1 is trusted.
 - Management runs with `--disable-anonymous-metrics=true` (no usage data sent
@@ -63,17 +91,33 @@ after a management restart, the server's client reconnected in 3.5 s.
 ## Secrets
 
 Not in this repo. On the server, all are root only (mode 600):
-- `netbird_setup_key` (Docker secret for the server's client)
-- `relay.env` (`NB_AUTH_SECRET`) and `management/config.json` (relay secret,
+- `netbird-client/netbird_setup_key` (Docker secret for the server's client)
+- `netbird/relay.env` (`NB_AUTH_SECRET`) and `netbird/management/config.json` (relay secret,
   `DataStoreEncryptionKey`)
-- `arcane.env` (`ARCANE_ENCRYPTION_KEY`)
-- `step-ca-data/password`, `step-ca-data/secrets/password` (owned by uid
+- `arcane/arcane.env` (`ARCANE_ENCRYPTION_KEY`)
+- `step-ca/data/password`, `step-ca/data/secrets/password` (owned by uid
   1000, the user step-ca runs as)
 
 ## Arcane
 
 Docker web UI at `https://arcane.sentryvault.com`, local only (port 443).
-It runs as root and mounts `/root`, so it can edit this compose project.
+It runs as root and mounts `/root` (its projects folder), so it can edit the
+projects above. Arcane only edits a project in a subfolder of `/root`, not a
+compose file in `/root` itself ("project path is outside projects directory").
+Image: `getarcaneapp/manager` from Docker Hub.
+
+Image updates:
+- For a fixed tag (`0.83.1`), Arcane by default only checks for a rebuild
+  of that same tag, never a newer version. Every container except
+  simple-rtc and Arcane has the label
+  `com.getarcaneapp.arcane.updater.strategy=tag`, so Arcane shows newer
+  version tags and writes the new tag into the compose file when it updates.
+- simple-rtc (`:latest`) shows an update when a new image is pushed.
+- The Updates page has one row per project (the 4 NetBird containers are one
+  row). One container alone: its page, Actions, Update Container.
+- After updating in Arcane, the server's compose files are newer than
+  `netbird_server_config/`: copy them back before running `push.sh`, or it
+  puts the old tags back.
 
 ## Router
 
