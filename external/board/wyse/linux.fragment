@@ -87,6 +87,9 @@ CONFIG_WATCHDOG=y
 CONFIG_WATCHDOG_CORE=y
 CONFIG_I6300ESB_WDT=y
 CONFIG_SOFT_WATCHDOG=m
+# One CPU stuck in the kernel while the others still feed the watchdog:
+# panic (softlockup_panic=1 in grub.cfg), then reboot (panic=10).
+CONFIG_SOFTLOCKUP_DETECTOR=y
 
 # Apps share one cgroup with a RAM limit (see /usr/libexec/wyse/apps-setup).
 CONFIG_MEMCG=y
