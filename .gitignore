@@ -7,8 +7,8 @@ config/*
 .env
 keys/*
 root_ca.crt
-# NetBird server config (setup key, relay secret, store key)
-netbird_server_config/
+# The server repo (its own git repo), cloned here to work on both
+homeLab-server/
 
 # Build output and logs
 build.log
