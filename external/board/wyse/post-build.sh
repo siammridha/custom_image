@@ -333,13 +333,13 @@ rm -f "$T/etc/wyse/authorized_keys" "$T/etc/wyse/hosts"
 v=$(get "$NET" static_host)
 [ -z "$v" ] || echo "$v" | awk '{ printf "%s\t%s\n", $1, $2 }' >> "$T/etc/hosts"
 
-# The VPN keys, in files only root can read. NetBird and Tailscale read
-# them themselves (--setup-key-file, --auth-key=file:), so the keys are
-# never on a command line, where apps could read them.
+# The NetBird setup key, in a file only root can read. NetBird reads it
+# itself (--setup-key-file), so the key is never on a command line, where
+# apps could read it. Tailscale has no key: its login is the copied state
+# (scripts/device-keys.sh tailscale_state).
 rm -f "$T/etc/wyse/vpn.conf" "$T/etc/wyse/netbird.key" "$T/etc/wyse/tailscale.key"
 key() { [ -n "$2" ] && (umask 077; printf '%s\n' "$2" > "$T/etc/wyse/$1"); true; }
 key netbird.key "$(get "$NET" netbird_key)"
-key tailscale.key "$(get "$NET" tailscale_key)"
 
 # The private CA certificates (one or more), trusted by the system. Added
 # between two marker lines; the old block is removed first, because

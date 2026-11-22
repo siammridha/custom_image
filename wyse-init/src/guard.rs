@@ -61,11 +61,6 @@ impl Guard {
 
     fn ts_up(&self) {
         let mut a = vec!["up".to_string(), "--timeout=45s".into(), format!("--hostname={}", self.hostname)];
-        // "file:": Tailscale reads the key from the file (cmd/tailscale/cli
-        // up.go resolveValueFromFile), so it is not on the command line.
-        if let Some(f) = config::ts_key_file() {
-            a.push(format!("--auth-key=file:{f}"));
-        }
         a.extend(config::TS_UP_ARGS.iter().map(|s| s.to_string()));
         self.cmd("tailscale", a, 60);
     }

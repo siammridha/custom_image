@@ -9,14 +9,23 @@ images private too.
   ssh_keys                      public SSH keys that can log in as root, one
                                 per line (the contents of ~/.ssh/<key>.pub)
   devices/<any name>            one file per device
+  tailscale/<name>              a device's tailscaled.state, copied after
+                                its first login (tailscale_state below)
 
 A device file: "name = value" lines, # starts a comment line.
 
   model     = 3040            3040 or 5020
   host      = shop-01         host name
   address   = 192.168.80.13   IP for scripts/deploy.sh and test-device.sh
+  tailscale_state =           empty for a new device: it boots logged out.
+                              Log in by hand on the device:
+                                tailscale up --ssh --netfilter-mode=off --hostname=<host>
+                              open the link, turn off key expiry on the
+                              Machines page, then copy
+                              /var/lib/tailscale/tailscaled.state to
+                              tailscale/<name> and write <name> here
 
-The build adds the device's keys at the end (ssh_key, netbird, tailscale;
+The build adds the device's keys at the end (ssh_key, netbird;
 see scripts/device-keys.sh). Keep a copy of the files: without these keys a
 device gets new VPN identities.
 

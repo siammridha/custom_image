@@ -87,12 +87,16 @@ Partitions: p1 EFI/boot (64M at 1M), p2 read-only squashfs root (512M at
   are the same after every boot. One image per device. Each device has a
   file `config/devices/<any name>`: `model`, `host`, `address` (IP for
   deploy and test), and `ssh_key` (ed25519 seed, hex; also NetBird SSH),
-  `netbird` (WireGuard key, base64), `tailscale` (machine key,
-  `privkey:<hex>`). Only the first three are written by hand:
+  `netbird` (WireGuard key, base64), `tailscale_state` (below). Only the
+  first three are written by hand:
   `scripts/device-keys.sh` makes missing keys and adds them at the end.
   Keys already there are kept, so a device keeps its peers. Unknown or
-  repeated names are an error. Tailscale logs in again at every boot with
-  `tailscale_key`, so that key must be reusable and not expire.
+  repeated names are an error. Tailscale has no key: a new device (empty
+  `tailscale_state`) boots logged out; log in by hand (`tailscale up --ssh
+  --netfilter-mode=off --hostname=<host>`, open the link), turn off key
+  expiry on the Machines page, copy `/var/lib/tailscale/tailscaled.state`
+  to `config/tailscale/<name>` and set `tailscale_state = <name>`. Every
+  later image boots as that same device and IP, with no login.
 - Logs: syslogd writes `/data/log/messages` (kept across reboots, about
   1 MB at most). After a kernel panic, wyse-init boot saves the panic
   text that pstore kept in EFI variables to `/data/log/crash-<time>`.
@@ -117,10 +121,9 @@ Partitions: p1 EFI/boot (64M at 1M), p2 read-only squashfs root (512M at
   qdisc; an nftables rule (table `ip wyse`) puts traffic from `apps` in the
   low band.
 - VPN settings are fixed in the image (no settings file). `config/network`
-  `netbird_key` and `tailscale_key` go to `/etc/wyse/netbird.key` and
-  `/etc/wyse/tailscale.key` (root only). vpn-guard passes the file paths
-  (`--setup-key-file`, `--auth-key=file:`), so the keys are never on a
-  command line, where apps could read them. The management URL
+  `netbird_key` goes to `/etc/wyse/netbird.key` (root only). vpn-guard
+  passes the file path (`--setup-key-file`), so the key is never on a
+  command line, where apps could read it. The management URL
   (`netbird_url`, required) and the `up` arguments are built into
   wyse-init (`wyse-init/src/config.rs`). `static_host` (one IP and name)
   goes into `/etc/hosts`. `config/ssh_keys` becomes root's

@@ -7,7 +7,10 @@
 #   address   = 192.168.80.13     IP for scripts/deploy.sh and test-device.sh
 #   ssh_key   = <64 hex>          SSH host key: ed25519 seed (dropbear and NetBird SSH)
 #   netbird   = <base64>          NetBird WireGuard private key (default.json PrivateKey)
-#   tailscale = privkey:<64 hex>  Tailscale machine key (tailscaled.state _machinekey)
+#   tailscale_state = <name>      tailscaled.state copied after the first login
+#                                 (by hand), as config/tailscale/<name>: the
+#                                 device keeps its Tailscale login. Empty: no
+#                                 login yet
 #
 #   scripts/device-keys.sh <file>            check it, add missing keys
 #   scripts/device-keys.sh <file> <target>   also write the keys into the
@@ -15,14 +18,15 @@
 #
 # Only model and host are needed: missing keys are made from /dev/urandom
 # and added to the end of the file. Keys already there are kept, so a device
-# keeps its NetBird and Tailscale peer. File formats follow the programs'
+# keeps its NetBird peer. File formats follow the programs'
 # source:
 #   - NetBird 0.83.1 default.json: PrivateKey and SSHKey (PKCS8 PEM, as Go's
 #     x509.MarshalPKCS8PrivateKey makes it), and the settings (below);
 #     NetBird fills in the rest.
-#   - Tailscale 1.104.7 tailscaled.state (FileStore: JSON map, values base64).
-#     WireGuard and Tailscale keys are clamped like clamp25519Private
-#     (types/key/util.go); Tailscale doesn't clamp keys it loads.
+#   - The NetBird key is clamped like Tailscale's clamp25519Private
+#     (types/key/util.go).
+#   - Tailscale: tailscaled.state is copied as it is (it holds the machine
+#     and node keys), so the device file has no Tailscale key.
 #   - dropbear 2026.94 host key (buf_put_ed25519_priv_key): string
 #     "ssh-ed25519", uint32 64, seed, public key. The server reads only this
 #     format.
@@ -33,7 +37,7 @@ die() { echo "$F: $*" >&2; exit 1; }
 [ -f "$F" ] || die "no such file"
 . "$(dirname "$0")/config.sh"
 
-NAMES="model host address ssh_key netbird tailscale"
+NAMES="model host address ssh_key netbird tailscale_state"
 BAD=$(grep -vE '^[ \t]*(#|$)' "$F" | tr -d '\r' |
 	grep -vE "^[ \t]*($(echo $NAMES | tr ' ' '|'))[ \t]*=" || true)
 [ -z "$BAD" ] || die "unknown line: $(echo "$BAD" | head -n 1) (names: $NAMES)"
@@ -41,7 +45,8 @@ for n in $NAMES; do
 	[ "$(grep -cE "^[ \t]*$n[ \t]*=" "$F")" -le 1 ] || die "$n is there more than once"
 done
 MODEL=$(get "$F" model); HOST=$(get "$F" host)
-SSH=$(get "$F" ssh_key); NB=$(get "$F" netbird); TS=$(get "$F" tailscale)
+SSH=$(get "$F" ssh_key); NB=$(get "$F" netbird)
+TSS=$(get "$F" tailscale_state)
 
 case $MODEL in 3040|5020) ;; *) die "model must be 3040 or 5020, not '$MODEL'" ;; esac
 echo "$HOST" | grep -qE '^[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?$' ||
@@ -70,9 +75,13 @@ hex32 "$SSH" || die "ssh_key must be 64 hex characters"
 if [ -z "$NB" ]; then NB=$(clamp "$(rand)" | b64); add netbird "$NB"; fi
 NBHEX=$(printf %s "$NB" | base64 -d 2>/dev/null | xxd -p -c 64) || true
 hex32 "$NBHEX" || die "netbird must be 32 bytes in base64"
-if [ -z "$TS" ]; then TS=privkey:$(clamp "$(rand)"); add tailscale "$TS"; fi
-hex32 "${TS#privkey:}" && [ "${TS%%:*}" = privkey ] ||
-	die "tailscale must be privkey:<64 hex characters>"
+# Only a check that it is a tailscaled.state (FileStore JSON with a machine key).
+if [ -n "$TSS" ]; then
+	TSS=$(dirname "$F")/../tailscale/$TSS
+	[ -f "$TSS" ] || die "tailscale_state: no such file $TSS"
+	grep -q '"_machinekey"' "$TSS" ||
+		die "tailscale_state: $TSS is not a tailscaled.state"
+fi
 [ -z "$ADDED" ] || echo "$F: added$ADDED"
 chmod 600 "$F"
 [ -n "$T" ] || exit 0
@@ -98,7 +107,12 @@ U=${NB_URL:?NB_URL (netbird_url) is needed to write default.json}
 NB_SCHEME=${U%%://*}; NB_HOST=${U#*://}; NB_HOST=${NB_HOST%%/*}
 printf '{\n    "PrivateKey": "%s",\n    "SSHKey": "-----BEGIN PRIVATE KEY-----\\n%s\\n-----END PRIVATE KEY-----\\n",\n    "ManagementURL": {"Scheme": "%s", "Host": "%s"},\n    "ServerSSHAllowed": true,\n    "EnableSSHRoot": true,\n    "DisableDNS": true,\n    "NetworkMonitor": true\n}\n' \
 	"$NB" "$(echo "$DER" | b64)" "$NB_SCHEME" "$NB_HOST" | put /var/lib/netbird/default.json
-printf '{\n    "_machinekey": "%s"\n}\n' "$(printf %s "$TS" | base64 | tr -d '\n')" |
-	put /var/lib/tailscale/tailscaled.state
+# Tailscale: the state copied after the first login. A new device has none:
+# tailscaled makes its keys, you log in by hand once and copy the state.
+if [ -n "$TSS" ]; then
+	put /var/lib/tailscale/tailscaled.state < "$TSS"
+else
+	rm -f "$T/var/lib/tailscale/tailscaled.state" # from an earlier build
+fi
 echo "0000000b7373682d6564323535313900000040$SSH$PUB" | xxd -r -p | put /etc/wyse/dropbear_host_key
 echo "device-keys: ssh host key: ssh-ed25519 $(echo "0000000b7373682d6564323535313900000020$PUB" | b64)"

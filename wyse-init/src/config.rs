@@ -1,7 +1,8 @@
 //! Settings, all fixed in the image (build a new image to change them):
-//!   - NetBird setup key and Tailscale auth key: files in /etc/wyse, root
-//!     only (from config/network). NetBird and Tailscale read them themselves, so the
-//!     keys are never on a command line, where apps could read them
+//!   - NetBird setup key: a file in /etc/wyse, root only (from
+//!     config/network). NetBird reads it itself, so the key is never on a
+//!     command line, where apps could read it
+//!   - Tailscale login: the image's tailscaled.state (scripts/device-keys.sh)
 //!   - everything else: below, in this program
 //! Files are read from /rom, the read-only image, so a change in RAM is not
 //! used.
@@ -53,9 +54,4 @@ fn image_file(path: &str) -> String {
 /// NetBird setup key file, if the image has one.
 pub fn nb_key_file() -> Option<String> {
     Some(image_file("/etc/wyse/netbird.key")).filter(|f| Path::new(f).exists())
-}
-
-/// Tailscale auth key file, if the image has one.
-pub fn ts_key_file() -> Option<String> {
-    Some(image_file("/etc/wyse/tailscale.key")).filter(|f| Path::new(f).exists())
 }
