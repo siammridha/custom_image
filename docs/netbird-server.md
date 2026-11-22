@@ -20,23 +20,46 @@ not touch the others:
 | `arcane/` | arcane | `arcane.env` |
 
 - Each app has its own Docker network: `netbird`, `step-ca`, `simple-rtc`,
-  `arcane`, `netbird-client`. Only traefik joins all 5, so the apps can't reach each other,
+  `arcane`, `netbird-client`. Only traefik joins them all, so the apps can't reach each other,
   only traefik (tested: simple-rtc and management can't open each other or
   Arcane). No port is opened on the server except traefik's; Docker also
   drops traffic from other machines to container addresses.
+- `netbird`, `step-ca` and `simple-rtc` are internal networks: their
+  containers reach traefik but not the internet (tested 2026-11-21).
+  This also stops NetBird management's release check (`pkgs.netbird.io`
+  every 30 min, no setting turns it off). Only arcane and netbird-client
+  can go out. traefik's open ports and its own outside traffic use its own
+  normal network `traefik` (`gw_priority: 1`; without it Docker picked
+  `arcane`).
 - On each network, traefik has an alias for the public name of the app there
   (`netbird.sentryvault.com` on `netbird`, ...), so NetBird's own calls to
   its public address go to traefik. On `step-ca` it has all 3 names: step-ca
   checks each certificate by connecting to its name, and without the alias
   the name resolves to a public address and renewals fail.
   Certificates last 24 h.
-- Apps with traefik labels outside `netbird` set `traefik.docker.network`
-  (traefik's default is `netbird`).
+- All traefik routes are in `traefik/dynamic.yml` (file provider); apps have
+  no `traefik.*` labels. traefik has no Docker socket, so a break-in to
+  traefik can't control Docker. It reaches each app by container name
+  (`http://simple-rtc:3000`) on the app's network. A new app: add its
+  router and service to that file and its network to traefik. After
+  changing the file, restart traefik: push.sh replaces the file, and the
+  container keeps reading the old copy (tested 2026-11-21). traefik runs
+  with `no-new-privileges` (tested 2026-11-21).
+- traefik keeps nothing on disk: its certificates are in `/tmp/acme.json`
+  inside the container. A new container (recreate, update) gets new ones
+  from step-ca: about 30 s after the start, and until then clients get a
+  certificate error and try again. A plain `docker restart` keeps them.
+  So traefik is killed at once (`stop_signal: SIGKILL`) instead of waiting
+  10 s for open connections. traefik doesn't make the folder for
+  `acme.json`, so it must be one that exists (`/certificates` without a
+  volume failed). Tested 2026-11-21.
 - Networks and the volumes (`step-ca-data`, `netbird-management`,
-  `traefik-certs`, `netbird-client`, `rtc-diag`,
+  `netbird-client`, `rtc-diag`,
   `arcane-data`) are marked `external` in every project: a project never makes
-  or deletes them. If one is gone: `docker network create <name>` or
-  `docker volume create <name>`.
+  or deletes them. If one is gone: `docker volume create <name>`, or
+  `docker network create --internal <name>` for `netbird`, `step-ca`,
+  `simple-rtc` and without `--internal` for `traefik`, `arcane`
+  (`netbird-client`: see below).
 - Projects can't wait for each other (no `depends_on` between them). Every
   container has `restart: unless-stopped` and the NetBird parts retry, so the
   start order does not matter. The NetBird containers have no `depends_on`
@@ -121,8 +144,8 @@ connected for 15–20 minutes (until Linux gave up resending, 15 tries).
 `net.ipv4.tcp_retries2=6` on the Traefik container cut that to about 2
 minutes (tested 2026-11-18). It is kept as a backup.
 
-The 4478 route is in `traefik/dynamic.yml` (Traefik's file provider), not in
-management's Docker labels. Labels disappear while management restarts.
+The 4478 route is in `traefik/dynamic.yml` (all routes are, now), not in
+management's Docker labels, which disappeared while management restarted.
 A client that connected in that gap got a 404 page from Traefik (TLS still
 worked, since the certificate is shared) and stayed stuck on that
 connection: its health check failed, but it did not reconnect. With the route
@@ -146,6 +169,11 @@ after a management restart, the server's client reconnected in 3.5 s.
   traefik 3.7 logs a warning per entry point at every start.
 - Management runs with `--disable-anonymous-metrics=true` (no usage data sent
   to NetBird).
+- Only Arcane checks for new releases. traefik has
+  `--global.checknewversion=false`, Arcane `ARCANE_ANALYTICS_ENABLED=false`
+  (no heartbeat to checkin.getarcane.app). Management's metrics port 9090
+  can't be turned off; it only answers on the `netbird` network and sends
+  nothing.
 - Every image has a fixed version except `simple_rtc:latest`.
 - Log levels: info for all.
 
