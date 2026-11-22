@@ -100,6 +100,10 @@ Partitions: p1 EFI/boot (64M at 1M), p2 read-only squashfs root (512M at
 - Logs: syslogd writes `/data/log/messages` (kept across reboots, about
   1 MB at most). After a kernel panic, wyse-init boot saves the panic
   text that pstore kept in EFI variables to `/data/log/crash-<time>`.
+  After a hardware watchdog reset (3040), the kernel logs `iTCO_wdt: ...
+  previous reset was by the watchdog` (`external/patches/linux/`). Other
+  resets (power cut, forced reboot) leave no trace: the BIOS clears the
+  chip's reset-status registers.
 - `/data` keeps apps and `/data/alpine` (an Alpine root: `alpine apk add ...`,
   `alpine <cmd>` runs a command in it). It is a separate subsystem with its
   own busybox (Alpine's); the system's `/bin/busybox` has only the commands

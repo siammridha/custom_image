@@ -1,0 +1,18 @@
+--- a/drivers/watchdog/iTCO_wdt.c
++++ b/drivers/watchdog/iTCO_wdt.c
+@@ -535,6 +535,15 @@
+ 	dev_info(dev, "Found a %s TCO device (Version=%d, TCOBASE=0x%04llx)\n",
+ 		pdata->name, pdata->version, (u64)TCOBASE(p));
+ 
++	/* Wyse: log the old status first; bit 17 (SECOND_TO_STS) means the
++	 * watchdog reset the machine. The lines below clear it. */
++	if (p->iTCO_version == 3) {
++		u32 sts = inl(TCO1_STS(p));
++
++		dev_info(dev, "TCO_STS=0x%08x%s\n", sts,
++			 sts & 0x20000 ? ": previous reset was by the watchdog" : "");
++	}
++
+ 	/* Clear out the (probably old) status */
+ 	switch (p->iTCO_version) {
+ 	case 6:
