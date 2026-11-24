@@ -11,9 +11,15 @@
 # Sends disk.img.gz (made by ./build.sh; disk.img is 638 MB, mostly empty)
 # and keeps it packed in a RAM folder on the device. A copied busybox (Alpine's,
 # as in deploy.sh) unpacks it onto the disk, so nothing is read from the
-# disk while it is being overwritten. The write is checked and tried twice;
-# the device reboots only when the check passes. /data grows to the rest of
-# the disk on the first boot.
+# disk while it is being overwritten.
+# Safe for a remote device:
+# - The disk is touched only after the copy on the device has the right
+#   checksum (the copy is tried 3 times).
+# - The write runs on its own (setsid, output to a log in the RAM folder),
+#   so it goes on if the SSH connection drops; this script reconnects to
+#   show the log. The write is checked and tried 3 times; the device reboots
+#   only when the check passes. /data grows to the rest of the disk on the
+#   first boot.
 set -eu
 cd "$(dirname "$0")/.."
 CFG=config
@@ -27,7 +33,7 @@ IMG=/home/vscode/wyse-build/images/$H/disk.img.gz
 [ -f "$IMG" ] || { echo "no $IMG: build it first (./build.sh $H)" >&2; exit 1; }
 AT=$(ls "${WYSE_DL:-/home/vscode/wyse-build/dl}"/alpine/alpine-minirootfs-*-x86_64.tar.gz 2>/dev/null | sort -V | tail -n 1)
 [ -n "$AT" ] || { echo "no Alpine archive in the download folder: build first" >&2; exit 1; }
-SSH="ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -o ConnectTimeout=10"
+SSH="ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -o ConnectTimeout=10 -o ServerAliveInterval=5 -o ServerAliveCountMax=3"
 
 # The disk the device runs from: the one holding its root (/rom on this
 # image, / on Alpine), its size in bytes and the BIOS model name.
@@ -45,32 +51,26 @@ esac
 SIZE=$(gunzip -c "$IMG" | wc -c)
 [ "$DSIZE" -ge "$SIZE" ] || { echo "$DISK on $IP is smaller than disk.img" >&2; exit 1; }
 MD5=$(gunzip -c "$IMG" | md5sum | cut -d' ' -f1)
+GZMD5=$(md5sum < "$IMG" | cut -d' ' -f1)
 
 echo "$H ($IP, $NAME): everything on $DISK will be erased, /data too."
 printf 'Type the host name to go on: '
 read -r a
 [ "$a" = "$H" ] || { echo "Not installing."; exit 1; }
 
-echo "Copying to $IP..."
 TMP=$(mktemp -d); trap 'rm -rf "$TMP"' EXIT
 mkdir "$TMP/inst"
 tar -xzf "$AT" -C "$TMP" ./bin/busybox ./lib/ld-musl-x86_64.so.1
 mv "$TMP/bin/busybox" "$TMP/lib/ld-musl-x86_64.so.1" "$TMP/inst/"
-# A RAM folder: on Alpine /tmp is on the disk that gets overwritten.
-R=/tmp/wyse-install
-$SSH -n root@"$IP" "mkdir -p $R && { mountpoint -q $R || mount -t tmpfs -o size=128m tmpfs $R; }"
-tar -cf - -C "$TMP/inst" . | $SSH root@"$IP" "tar -xf - -C $R"
-$SSH root@"$IP" "cat > $R/disk.img.gz" < "$IMG"
 
-echo "Writing $DISK and rebooting..."
-$SSH -o ServerAliveInterval=5 -o ServerAliveCountMax=3 root@"$IP" \
-	"$R/ld-musl-x86_64.so.1 --library-path $R $R/busybox sh -s $R $DISK $SIZE $MD5" <<'EOF' 2>&1 |
+# Runs on the device from the RAM folder: write, check, reboot.
+cat > "$TMP/inst/write.sh" <<'EOF'
 R=$1 DISK=$2 SIZE=$3 MD5=$4
 B="$R/ld-musl-x86_64.so.1 --library-path $R $R/busybox"
 $B sync
 echo u > /proc/sysrq-trigger
 $B sleep 2
-for try in 1 2; do
+for try in 1 2 3; do
 	echo "write try $try"
 	$B gunzip -c $R/disk.img.gz | $B dd of=$DISK bs=1M 2>&1
 	$B sync
@@ -79,11 +79,57 @@ for try in 1 2; do
 	echo "disk.img md5 want $MD5 got $got"
 	if [ "$got" = "$MD5" ]; then
 		echo rebooting
-		$B sleep 1
+		$B sleep 3
 		echo b > /proc/sysrq-trigger
 	fi
 done
 echo "VERIFY FAILED, not rebooting"
-exit 1
 EOF
-	grep -vE 'records|copied' || true
+# Shows the write's log until the device reboots; exits 1 if the write failed.
+cat > "$TMP/inst/watch.sh" <<'EOF'
+R=$1 # $2: first log line to show
+B="$R/ld-musl-x86_64.so.1 --library-path $R $R/busybox"
+$B tail -n +$2 -f $R/log &
+t=$!
+while :; do
+	if $B grep -q '^VERIFY FAILED' $R/log; then $B sleep 1; kill $t; exit 1; fi
+	$B sleep 2
+done
+EOF
+
+# A RAM folder: on Alpine /tmp is on the disk that gets overwritten.
+R=/tmp/wyse-install
+B="$R/ld-musl-x86_64.so.1 --library-path $R $R/busybox"
+ok=
+for try in 1 2 3; do
+	echo "Copying to $IP (try $try)..."
+	if $SSH -n root@"$IP" "mkdir -p $R && { mountpoint -q $R || mount -t tmpfs -o size=128m tmpfs $R; }" &&
+		tar -cf - -C "$TMP/inst" . | $SSH root@"$IP" "tar -xf - -C $R" &&
+		$SSH root@"$IP" "cat > $R/disk.img.gz" < "$IMG"; then
+		got=$($SSH -n root@"$IP" "$B md5sum $R/disk.img.gz" | cut -d' ' -f1) || got=
+		echo "disk.img.gz md5 want $GZMD5 got $got"
+		[ "$got" = "$GZMD5" ] && { ok=1; break; }
+	fi
+done
+[ -n "$ok" ] || { echo "The copy on $IP is not right. Nothing was written." >&2; exit 1; }
+
+echo "Writing $DISK and rebooting (the write goes on if SSH drops)..."
+$SSH -n root@"$IP" "$B setsid $B sh $R/write.sh $R $DISK $SIZE $MD5 < /dev/null > $R/log 2>&1 &"
+# Follow the log; reconnect when the connection drops, for up to 30 minutes.
+L="$TMP/log"; : > "$L"; end=$(( $(date +%s) + 1800 ))
+while [ "$(date +%s)" -lt "$end" ]; do
+	rm -f "$TMP/rc"
+	{ $SSH -n root@"$IP" "$B sh $R/watch.sh $R $(( $(wc -l < "$L") + 1 ))" || echo $? > "$TMP/rc"; } | tee -a "$L"
+	rc=$(cat "$TMP/rc" 2>/dev/null || echo 0)
+	if [ "$rc" = 1 ] && grep -q '^VERIFY FAILED' "$L"; then
+		echo "The disk check failed 3 times. The device did not reboot and its disk is damaged: do not reboot it." >&2
+		echo "The image is still in its RAM. To write it again:" >&2
+		echo "  ssh root@$IP '$B setsid $B sh $R/write.sh $R $DISK $SIZE $MD5 < /dev/null > $R/log 2>&1 &'" >&2
+		exit 1
+	fi
+	grep -q '^rebooting' "$L" && { echo "The device is rebooting into the new image."; exit 0; }
+	echo "(connection lost, reconnecting)"
+	sleep 5
+done
+echo "No answer from $IP for 30 minutes. If the write finished, the device has rebooted; check it on its VPN IPs." >&2
+exit 1
