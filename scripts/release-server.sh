@@ -25,5 +25,4 @@ echo "Releasing raptor $version"
 docker buildx build --platform "$platform" \
   -t "$image:latest" -t "$image:$version" \
   --push raptor
-# Docker Desktop keeps a local copy of a pushed image; the other builders keep none, so nothing to remove.
-docker image rm "$image:latest" "$image:$version" 2>/dev/null || true
+# The local image and build cache are kept, so the next build reuses them.
