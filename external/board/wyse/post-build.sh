@@ -128,7 +128,9 @@ DEV=; DEVB=
 if [ -s "$BASE_DIR/busybox-build.fragment" ]; then
 	DEV="  $X[ DEV ]$R"; DEVB="  ${X}development$R"
 fi
-KV=$(ls "$T/lib/modules")
+# From the config, not lib/modules: an older kernel's modules can still be
+# there (removed below).
+KV=$(sed -n 's/^BR2_LINUX_KERNEL_VERSION="\(.*\)"$/\1/p' "$BR2_CONFIG")
 BRV=$(sed -n 's/^VERSION_ID=//p' "$T/etc/os-release")
 {
 	echo
