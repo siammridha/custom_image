@@ -14,6 +14,8 @@ homeLab-server/
 build.log
 drivers/out/
 saved-states/
+# Copies of device files (logs, /data)
+backups/
 .DS_Store
 
 # Claude session moved from the old project (may contain secrets)

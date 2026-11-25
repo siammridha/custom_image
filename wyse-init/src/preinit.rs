@@ -1,7 +1,8 @@
 //! First program the kernel runs (init=/sbin/preinit, a link to wyse-init).
-//! The kernel has mounted partition 2 (read-only squashfs) as /.
+//! The kernel has mounted root a or b (partition 2 or 3, read-only
+//! squashfs; update.rs) as /.
 //!
-//!   partition 3 "data"     -> /data      apps and their files; never wiped
+//!   partition 4 "data"     -> /data      apps and their files; never wiped
 //!                                        (except by wyse-wipe-data)
 //!   RAM (tmpfs)            -> overlayfs upper layer: every change outside
 //!                                        /data is gone at reboot
@@ -52,16 +53,16 @@ pub fn main() -> ! {
     }
 }
 
-fn dev_major(d: u64) -> u64 {
+pub fn dev_major(d: u64) -> u64 {
     ((d >> 32) & 0xffff_f000) | ((d >> 8) & 0xfff)
 }
 
-fn dev_minor(d: u64) -> u64 {
+pub fn dev_minor(d: u64) -> u64 {
     ((d >> 12) & 0xffff_ff00) | (d & 0xff)
 }
 
-/// Name of partition number `n` on `disk` (e.g. mmcblk1p3, sda3).
-fn part_name(disk: &str, n: u32) -> Option<String> {
+/// Name of partition number `n` on `disk` (e.g. mmcblk1p4, sda4).
+pub fn part_name(disk: &str, n: u32) -> Option<String> {
     let want = n.to_string();
     fs::read_dir(format!("/sys/block/{disk}"))
         .ok()?
@@ -103,19 +104,19 @@ fn run() -> Result<Infallible, String> {
         .and_then(Path::file_name)
         .map(|s| s.to_string_lossy().into_owned())
         .ok_or("cannot find the root disk")?;
-    let p3 = part_name(&disk, 3).ok_or(format!("partition 3 not found on {disk}"))?;
+    let p4 = part_name(&disk, 4).ok_or(format!("partition 4 not found on {disk}"))?;
 
-    // First boot on a new disk: grow partition 3 to the end of the disk,
+    // First boot on a new disk: grow partition 4 to the end of the disk,
     // then reboot so the kernel sees the new size.
     let dsize = sys::read_num(&format!("/sys/block/{disk}/size"));
-    let p3end = sys::read_num(&format!("/sys/block/{disk}/{p3}/start"))
-        + sys::read_num(&format!("/sys/block/{disk}/{p3}/size"));
-    if dsize > p3end + 8192 {
-        log(&format!("growing partition 3 on {disk}"));
+    let p4end = sys::read_num(&format!("/sys/block/{disk}/{p4}/start"))
+        + sys::read_num(&format!("/sys/block/{disk}/{p4}/size"));
+    if dsize > p4end + 8192 {
+        log(&format!("growing partition 4 on {disk}"));
         let d = format!("/dev/{disk}");
         let q = ["-q", "--no-reread", "--no-tell-kernel"];
         sys::run("sfdisk", &[&q[..], &["--relocate", "gpt-bak-std", &d]].concat());
-        sys::run_input("sfdisk", &[&q[..], &["-N", "3", &d]].concat(), ", +\n");
+        sys::run_input("sfdisk", &[&q[..], &["-N", "4", &d]].concat(), ", +\n");
         sys::reboot_now();
     }
 
@@ -123,22 +124,22 @@ fn run() -> Result<Infallible, String> {
     // disk, or an old layout), or when wyse-wipe-data asked for it. If it
     // can't be mounted, the system still boots (without /data), so NetBird
     // and Tailscale keep working.
-    let d3 = format!("/dev/{p3}");
-    if ext4_label(&p3) != "data" {
-        format_data(&d3);
+    let d4 = format!("/dev/{p4}");
+    if ext4_label(&p4) != "data" {
+        format_data(&d4);
     }
     let fsck = || {
-        if !sys::run_quiet("e2fsck", &["-p", &d3]) {
-            sys::run_quiet("e2fsck", &["-y", &d3]);
+        if !sys::run_quiet("e2fsck", &["-p", &d4]) {
+            sys::run_quiet("e2fsck", &["-y", &d4]);
         }
     };
     fsck();
-    let mut data = sys::mount_fs(&d3, "/data", "ext4", MS_NOATIME, "");
+    let mut data = sys::mount_fs(&d4, "/data", "ext4", MS_NOATIME, "");
     if data.is_ok() && Path::new(WIPE).exists() {
         let _ = sys::umount("/data");
-        format_data(&d3);
+        format_data(&d4);
         fsck();
-        data = sys::mount_fs(&d3, "/data", "ext4", MS_NOATIME, "");
+        data = sys::mount_fs(&d4, "/data", "ext4", MS_NOATIME, "");
     }
     let data = match data {
         Ok(()) => true,

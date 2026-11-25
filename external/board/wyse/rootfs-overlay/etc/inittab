@@ -24,6 +24,8 @@ null::sysinit:/bin/ln -sf /proc/self/fd/2 /dev/stderr
 ::respawn:/sbin/wyse-init run dropbear
 ::respawn:/sbin/wyse-init run ntpd
 ::respawn:/sbin/wyse-init run vpn-guard
+# Image updates from the update server (wyse-init/src/update.rs).
+::respawn:/sbin/wyse-init run update
 
 # The Alpine subsystem: its own init and OpenRC start the apps (low
 # priority, RAM-limited).

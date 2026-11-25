@@ -17,18 +17,18 @@ read -r ans
 
 d=$(basename "$src")
 part_sysfs() { for p in /sys/block/$d/*/partition; do [ "$(cat "$p")" = "$1" ] && dirname "$p"; done; }
-p3start=$(cat "$(part_sysfs 3)/start")
+p4start=$(cat "$(part_sysfs 4)/start")
 
-# Partition table + boot + root (everything before partition 3).
-dd if="$src" of="$dst" bs=512 count="$p3start" conv=fsync
+# Partition table + boot + root (everything before partition 4: GRUB and both roots).
+dd if="$src" of="$dst" bs=512 count="$p4start" conv=fsync
 # Empty data partition so the first boot formats it.
-dd if=/dev/zero of="$dst" bs=512 seek="$p3start" count=8192 conv=fsync
+dd if=/dev/zero of="$dst" bs=512 seek="$p4start" count=8192 conv=fsync
 
 # Fix the table for the target size and give it new UUIDs.
 sfdisk -q --relocate gpt-bak-std "$dst"
-echo ", 65536" | sfdisk -q --no-reread -N 3 "$dst"
+echo ", 65536" | sfdisk -q --no-reread -N 4 "$dst"
 sfdisk -q --disk-id "$dst" "$(cat /proc/sys/kernel/random/uuid)"
-for n in 1 2 3; do
+for n in 1 2 3 4; do
 	sfdisk -q --part-uuid "$dst" $n "$(cat /proc/sys/kernel/random/uuid)"
 done
 sync

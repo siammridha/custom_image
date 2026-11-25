@@ -7,6 +7,10 @@
 //!                                   network
 //!   wyse-init run <service>         from inittab (respawn): starts one service
 //!   wyse-init stop-apps             from inittab at shutdown: stops the apps
+//!   wyse-init install-slot <size> <sha256> <version>
+//!                                   image on stdin into the unused root
+//!                                   (scripts/deploy.sh; update.rs)
+//!   wyse-init update-status         roots, versions, grubenv
 //!   alpine (link)                   run a command in the Alpine subsystem
 //!   udhcpc-event (link)             udhcpc's lease handler
 mod alpine;
@@ -15,11 +19,15 @@ mod boot;
 mod config;
 mod dhcp;
 mod guard;
+mod http;
+mod json;
 mod net;
 mod preinit;
 mod prio;
 mod service;
+mod sha256;
 mod sys;
+mod update;
 
 use std::process::exit;
 
@@ -42,8 +50,10 @@ fn main() {
         "boot" => boot::main(),
         "run" => service::main(arg(2)),
         "stop-apps" => alpine::stop(),
+        "install-slot" => update::install_slot(&args[2..]),
+        "update-status" => update::status(),
         _ => {
-            eprintln!("usage: wyse-init boot | run <service> | stop-apps");
+            eprintln!("usage: wyse-init boot | run <service> | stop-apps | install-slot <size> <sha256> <version> | update-status");
             exit(1);
         }
     }

@@ -26,7 +26,7 @@ BR2_PACKAGE_BUSYBOX_CONFIG="$(BR2_EXTERNAL_WYSE_PATH)/board/wyse/busybox.config"
 # Kernel (longterm)
 BR2_LINUX_KERNEL=y
 BR2_LINUX_KERNEL_CUSTOM_VERSION=y
-BR2_LINUX_KERNEL_CUSTOM_VERSION_VALUE="6.18.64"
+BR2_LINUX_KERNEL_CUSTOM_VERSION_VALUE="6.18.65"
 BR2_LINUX_KERNEL_USE_ARCH_DEFAULT_CONFIG=y
 BR2_LINUX_KERNEL_BZIMAGE=y
 BR2_LINUX_KERNEL_NEEDS_HOST_LIBELF=y
@@ -65,8 +65,8 @@ BR2_TARGET_GRUB2=y
 BR2_TARGET_GRUB2_I386_PC=y
 BR2_TARGET_GRUB2_X86_64_EFI=y
 BR2_TARGET_GRUB2_BOOT_PARTITION="hd0,gpt1"
-BR2_TARGET_GRUB2_BUILTIN_MODULES_PC="boot linux normal configfile biosdisk part_gpt fat echo test regexp probe"
-BR2_TARGET_GRUB2_BUILTIN_MODULES_EFI="boot linux normal configfile part_gpt fat echo test regexp probe efi_gop"
+BR2_TARGET_GRUB2_BUILTIN_MODULES_PC="boot linux normal configfile biosdisk part_gpt fat echo test regexp probe loadenv squash4"
+BR2_TARGET_GRUB2_BUILTIN_MODULES_EFI="boot linux normal configfile part_gpt fat echo test regexp probe loadenv squash4 efi_gop"
 
 # Image tools
 BR2_PACKAGE_HOST_GENIMAGE=y

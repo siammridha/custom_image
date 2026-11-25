@@ -11,6 +11,9 @@ images private too.
   devices/<any name>            one file per device
   tailscale/<name>              a device's tailscaled.state, copied after
                                 its first login (tailscale_state below)
+  raptor                        the update server login for scripts/publish.sh:
+                                  username = admin
+                                  password = ...
 
 A device file: "name = value" lines, # starts a comment line.
 
@@ -25,7 +28,8 @@ A device file: "name = value" lines, # starts a comment line.
                               /var/lib/tailscale/tailscaled.state to
                               tailscale/<name> and write <name> here
 
-The build adds the device's keys at the end (ssh_key, netbird;
+The build adds the device's keys at the end (ssh_key, netbird,
+update_token: its login to the update server;
 see scripts/device-keys.sh). Keep a copy of the files: without these keys a
 device gets new VPN identities.
 

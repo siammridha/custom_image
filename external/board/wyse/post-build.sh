@@ -37,8 +37,11 @@ MODS=$( [ ! -f "$ML" ] || grep -v '^#' "$ML" | tr -s ' \t\n' '   ')
 # lease handler, in one Rust program (no boot scripts). The host name, the
 # model's drivers and the NetBird management URL are built into it
 # (wyse-init/src/config.rs).
+# The update server's device address (update_url; empty: no automatic
+# updates, wyse-init/src/update.rs).
 WI=$B/../../../wyse-init
-WYSE_NB_MANAGEMENT_URL=$NB_URL WYSE_HOSTNAME=$H WYSE_MODULES=$MODS \
+UPD_URL=$(get "$NET" update_url)
+WYSE_NB_MANAGEMENT_URL=$NB_URL WYSE_HOSTNAME=$H WYSE_MODULES=$MODS WYSE_UPDATE_URL=$UPD_URL \
 CARGO_TARGET_X86_64_UNKNOWN_LINUX_MUSL_LINKER=$HOST_DIR/bin/x86_64-buildroot-linux-musl-gcc \
 	cargo build -q --release --target x86_64-unknown-linux-musl \
 	--manifest-path "$WI/Cargo.toml" --target-dir "$BUILD_DIR/wyse-init"
@@ -47,6 +50,28 @@ ln -sf wyse-init "$T/sbin/preinit"
 mkdir -p "$T/usr/libexec/wyse"
 ln -sf /sbin/wyse-init "$T/usr/libexec/wyse/udhcpc-event"
 ln -sf /sbin/wyse-init "$T/usr/sbin/alpine"
+
+# Each root has its own kernel and command line, so one update changes both
+# (partition 1's grub.cfg boots /boot/grub.cfg of root a or b).
+# Development builds: no "quiet", so all boot messages show on the monitor.
+# Buildroot's GRUB package puts a sample /boot/grub/grub.cfg in the target;
+# GRUB reads only partition 1's.
+rm -rf "$T/boot/grub"
+mkdir -p "$T/boot"
+cp "$BINARIES_DIR/bzImage" "$T/boot/bzImage"
+if [ -s "$BASE_DIR/busybox-build.fragment" ]; then
+	sed 's/ quiet//' "$B/root-grub.cfg" > "$T/boot/grub.cfg"
+else
+	cp "$B/root-grub.cfg" "$T/boot/grub.cfg"
+fi
+# This image's version (build time, git commit; -dev: development build)
+# and host. The updater checks both before it boots a new image.
+V=$(date -u +%Y%m%d.%H%M%S)-$(git -C "$B" rev-parse --short HEAD 2>/dev/null || echo nogit)
+[ -z "$(git -C "$B/../../.." status --porcelain 2>/dev/null)" ] || V=$V-changed
+[ ! -s "$BASE_DIR/busybox-build.fragment" ] || V=$V-dev
+echo "$V" > "$T/etc/wyse/version"
+echo "$H" > "$T/etc/wyse/host"
+echo "version: $V"
 
 # Alpine mini root filesystem. Unpacked into /data/alpine when that is
 # missing, so apk works again after wyse-wipe-data, even offline.
@@ -155,7 +180,12 @@ NB_URL=$NB_URL "$B/../../../scripts/device-keys.sh" "$DF" "$T"
 # loads the model's drivers at boot.
 IMAGE_MODULES="efivarfs nf_log_syslog softdog x86_pkg_temp_thermal
 	xt_LOG xt_MASQUERADE xt_addrtype xt_mark"
-KREL=$(ls "$T/lib/modules")
+KREL=$(sed -n 's/^BR2_LINUX_KERNEL_VERSION="\(.*\)"$/\1/p' "$BR2_CONFIG")
+[ -d "$T/lib/modules/$KREL" ] || { echo "no modules for Linux $KREL" >&2; exit 1; }
+# Modules of an older kernel, left in the target after a version change.
+for d in "$T"/lib/modules/*; do
+	[ "${d##*/}" = "$KREL" ] || rm -rf "$d"
+done
 M=$T/lib/modules/$KREL
 # Development builds: test_lockup (freezes the CPUs, for testing the
 # watchdog). Copied from the kernel build: a production build removed it

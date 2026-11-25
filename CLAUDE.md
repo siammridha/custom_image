@@ -69,9 +69,12 @@ User's rules for the image:
 - `scripts/device-keys.sh` checks a device file, makes its missing keys and
   writes them into the image (run by build.sh and post-build.sh).
 - `scripts/deploy.sh <host name>` puts a built image on a running
-  device over SSH (IP: `address` in its device file).
-  `scripts/install.sh <host name>` writes the whole `disk.img.gz` over SSH
-  (first install from Alpine, or a full reinstall; erases `/data`).
+  device over SSH (IP: `address` in its device file), into its unused root.
+  `scripts/install.sh <host name> [disk]` writes the whole `disk.img.gz`
+  over SSH (first install from Alpine, or a full reinstall; erases `/data`).
+  Give the disk (`/dev/mmcblk0`) when Alpine runs from a USB stick.
+- `scripts/publish.sh <host name> ...` sends built images to the update
+  server; the devices install them by themselves (Updates, below).
 - `scripts/check-updates.sh` shows which parts of the image have a newer
   release and their release notes. `scripts/set-version.sh <part> <version>`
   changes the version and checksum of linux, netbird, tailscale, go,
@@ -79,15 +82,22 @@ User's rules for the image:
 
 # Disk and boot
 
-Partitions: p1 EFI/boot (64M at 1M), p2 read-only squashfs root (512M at
-65M), p3 `/data` (rest of the disk; grown on the first boot).
+Partitions: p1 EFI (8M at 1M: GRUB and `grubenv`), p2 root a and p3 root b
+(160M each: read-only squashfs, each with its own kernel and grub.cfg in
+`/boot`), p4 `/data` (rest of the disk; grown on the first boot).
+- GRUB (`board/wyse/grub.cfg`) boots the root in `grubenv` `slot` (a or b).
+  An update sets `try` to the other root; GRUB clears `try` and boots that
+  root once. So a panic, watchdog reset or power cut during that boot goes
+  back to `slot`. If a root's kernel doesn't load, GRUB boots the other.
+  `wyse-init update-status` shows the roots, versions and grubenv.
 - The overlay is in RAM: every boot starts fresh from the image. `/data` is
   the only place that keeps changes.
 - The VPN and SSH keys and the host name are baked into the image, so they
   are the same after every boot. One image per device. Each device has a
   file `config/devices/<any name>`: `model`, `host`, `address` (IP for
   deploy and test), and `ssh_key` (ed25519 seed, hex; also NetBird SSH),
-  `netbird` (WireGuard key, base64), `tailscale_state` (below). Only the
+  `netbird` (WireGuard key, base64), `update_token` (update server
+  login, hex), `tailscale_state` (below). Only the
   first three are written by hand:
   `scripts/device-keys.sh` makes missing keys and adds them at the end.
   Keys already there are kept, so a device keeps its peers. Unknown or
@@ -136,6 +146,27 @@ Partitions: p1 EFI/boot (64M at 1M), p2 read-only squashfs root (512M at
   private-ca-certificates.crt` lines (replaced on every build) and to
   Alpine's.
 
+# Updates
+
+- Server: raptor (Rust, hawkBit-compatible) on the home lab, set up in the
+  homeLab-server repo (`raptor/`). Its web page and admin API are reached
+  only from the local network (`update_admin_url`); the device API only over
+  NetBird, plain HTTP (`update_url`, built into wyse-init).
+- `wyse-init run update` (`wyse-init/src/update.rs`) polls the server with
+  hawkBit's device API (DDI v1), `Authorization: TargetToken` from
+  `/etc/wyse/update.token`. When an image is assigned, it downloads it into
+  the unused root, checks it (sha256, mounts it, `/boot/bzImage`, host,
+  version), sets `try` and reboots.
+- Trial boot: when NetBird or Tailscale comes up, it sets `slot` to this
+  root and reports success. No VPN in 15 min: it reboots into the old root.
+  A version that fails 3 times is skipped. State is in `/data/wyse-update/`,
+  messages in `/data/log/messages` (`update:`).
+- Each image has `/etc/wyse/version` (build time, git commit, `-dev`) and
+  `/etc/wyse/host`.
+- `scripts/publish.sh` uploads each host's `rootfs.squashfs`, assigns it and
+  waits for success before the next host, so put the 3040 first. Images
+  hold the device's keys: each device gets only its own (its token).
+
 # Build
 
 - Fill in `config/` (`config/README`). The private SSH key is not in the
@@ -156,6 +187,12 @@ Partitions: p1 EFI/boot (64M at 1M), p2 read-only squashfs root (512M at
   Changing `dropbear-localoptions.h` needs `make MODEL=... dropbear-dirclean`. First
   build of a model takes about an hour, later builds minutes. Buildroot
   does not notice kernel fragment changes: run `make MODEL=... linux-reconfigure`.
+  It doesn't rebuild GRUB when its module list (`BR2_TARGET_GRUB2_BUILTIN_MODULES_EFI`)
+  changes: run `make MODEL=... grub2-dirclean`.
+- A production build stops when Buildroot, Linux, linux-firmware, NetBird,
+  Tailscale, Go or Rust has a newer release (`scripts/check-updates.sh`); a
+  development build only warns. Update with `scripts/set-version.sh`, test
+  on the 3040, then build prod.
 - Output is in `/home/vscode/wyse-build/output-<model>`, downloads in
   `/home/vscode/wyse-build/dl` (a container volume), not the workspace: the
   Mac file sharing corrupted a download once.
@@ -179,9 +216,17 @@ Partitions: p1 EFI/boot (64M at 1M), p2 read-only squashfs root (512M at
 - Wyse 3040 at `address` in `config/devices/wyse-3040`. SSH:
   `ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null root@<ip>`.
   No scp on the device; copy with `ssh ... 'cat > file' < file`.
-- Deploy: `scripts/deploy.sh <host name>` (keeps `/data`). It writes only p1 and
-  p2, so it can't change the partition layout. `scripts/install.sh` can (erases
-  `/data`).
+- Deploy: `scripts/deploy.sh <host name>` (keeps `/data`). It sends the root
+  to `wyse-init install-slot`, which writes the unused root, like an
+  update. It can't change GRUB (p1) or the partition layout.
+  `scripts/install.sh` can (erases `/data`).
+- Testing without the device: QEMU with UEFI boots `disk.img` (copy it,
+  `truncate -s 2G`): `qemu-system-x86_64 -cpu max -m 2048` (the default CPU
+  fails in sfdisk), pflash `/usr/share/qemu/edk2-x86_64-code.fd` and a copy
+  of `edk2-i386-vars.fd`, `-drive ...,if=virtio`, `-netdev
+  user,id=n0,restrict=on,hostfwd=tcp:127.0.0.1:2222-:22`. Use `restrict=on`:
+  the image has the device's VPN keys, so without it the VM joins the VPNs
+  as that device.
 - The image's busybox has no ls, grep, head, sleep, mv, chmod, gzip and more
   (only what the image uses). Use `alpine <cmd>`; scripts bring Alpine's
   busybox from the Alpine archive in the download folder. Unpack `.tar.gz` files with

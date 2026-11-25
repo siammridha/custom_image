@@ -72,6 +72,13 @@ impl Guard {
     }
 }
 
+/// NetBird or Tailscale is connected (update.rs: a new image is kept only
+/// when one of them comes up).
+pub fn vpn_up() -> bool {
+    let g = Guard { hostname: config::HOSTNAME };
+    g.nb_ok() || g.ts_ok()
+}
+
 /// `"BackendState": "Running"` -> "Running".
 fn backend_state(json: &str) -> &str {
     let Some(i) = json.find("\"BackendState\"") else { return "" };
@@ -163,10 +170,7 @@ pub fn main() -> ! {
             any_last = t;
         } else if t - any_last >= 1800 {
             sys::log("NetBird and Tailscale down for 30 min: rebooting");
-            sys::sync();
-            sys::kill(1, sys::SIGTERM); // BusyBox init: clean reboot
-            sys::sleep(120);
-            sys::put("/proc/sysrq-trigger", "b"); // normal reboot hung: force it
+            sys::clean_reboot();
         }
 
         trim_logs();

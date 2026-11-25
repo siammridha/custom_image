@@ -141,6 +141,16 @@ pub fn reboot_now() -> ! {
     }
 }
 
+/// Clean reboot through BusyBox init (apps stopped, disks unmounted). If
+/// that hangs, force it after 2 min.
+pub fn clean_reboot() -> ! {
+    sync();
+    kill(1, SIGTERM);
+    sleep(120);
+    put("/proc/sysrq-trigger", "b");
+    idle()
+}
+
 pub fn kill(pid: i32, sig: i32) {
     unsafe { c_kill(pid, sig) };
 }

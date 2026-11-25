@@ -1,5 +1,5 @@
 diff --git a/package/fakeroot/fakeroot.mk b/package/fakeroot/fakeroot.mk
-index 12d7f1c4..0b23d672 100644
+index 12d7f1c4a1..0b23d67263 100644
 --- a/package/fakeroot/fakeroot.mk
 +++ b/package/fakeroot/fakeroot.mk
 @@ -15,6 +15,12 @@ HOST_FAKEROOT_DEPENDENCIES = host-acl
@@ -16,7 +16,7 @@ index 12d7f1c4..0b23d672 100644
  FAKEROOT_LICENSE_FILES = COPYING
  
 diff --git a/package/go/Config.in.host b/package/go/Config.in.host
-index 47c7e5d0..e524a86f 100644
+index 47c7e5d075..e524a86fa4 100644
 --- a/package/go/Config.in.host
 +++ b/package/go/Config.in.host
 @@ -2,7 +2,7 @@
@@ -47,7 +47,7 @@ index 47c7e5d0..e524a86f 100644
  	  This package will build the go compiler for the host.
  
 diff --git a/package/go/go-src/go-src.mk b/package/go/go-src/go-src.mk
-index 7bdde1a8..561ef7c0 100644
+index 7bdde1a8c1..561ef7c0b4 100644
 --- a/package/go/go-src/go-src.mk
 +++ b/package/go/go-src/go-src.mk
 @@ -15,9 +15,18 @@ GO_SRC_CPE_ID_VENDOR = golang
@@ -79,7 +79,7 @@ index 7bdde1a8..561ef7c0 100644
  	GOROOT="$(@D)" \
  	GOBIN="$(@D)/bin" \
 diff --git a/package/go/go.hash b/package/go/go.hash
-index 828f8093..7d4e6f04 100644
+index 828f809395..7d4e6f04de 100644
 --- a/package/go/go.hash
 +++ b/package/go/go.hash
 @@ -1,5 +1,5 @@
@@ -90,7 +90,7 @@ index 828f8093..7d4e6f04 100644
  sha256  65efbc80fdc1fa2cd2631cad5b481777a68e8725f34e89f50fc6ac714e379b40  go1.27.3.linux-amd64.tar.gz
  sha256  a06e99309dbcbdca1a8ccd2282c3ee146e55930886e26b4f1193269587165f49  go1.27.3.linux-arm64.tar.gz
 diff --git a/package/go/go.mk b/package/go/go.mk
-index 88b4163c..b7e61f9e 100644
+index 88b4163ce1..b7e61f9ebf 100644
 --- a/package/go/go.mk
 +++ b/package/go/go.mk
 @@ -4,7 +4,7 @@
@@ -103,18 +103,18 @@ index 88b4163c..b7e61f9e 100644
  HOST_GO_GOPATH = $(HOST_DIR)/share/go-path
  HOST_GO_HOST_CACHE = $(HOST_DIR)/share/host-go-cache
 diff --git a/package/linux-firmware/linux-firmware.hash b/package/linux-firmware/linux-firmware.hash
-index 103f4ecf..de9ec3cb 100644
+index 103f4ecf7b..73633ae72a 100644
 --- a/package/linux-firmware/linux-firmware.hash
 +++ b/package/linux-firmware/linux-firmware.hash
 @@ -1,5 +1,5 @@
  # From https://mirrors.edge.kernel.org/pub/linux/kernel/firmware/sha256sums.asc
 -sha256  ac17c34fe73756926a961fbafadf8d8f07a3bd2dd2f4ea31a0fb5d50c714a49a  linux-firmware-20260810.tar.xz
-+sha256  a10d1ab5baf2c74ba92e8c7cf313e691696c26bddfa6df00db795e48d70cd4ca  linux-firmware-20261019.tar.xz
++sha256  2cabe10253005f55bf4bbc0ebb25c0964d66f7c4121ffa47853ff1e70ea1aa54  linux-firmware-20261124.tar.xz
  
  # Hash for license files
  sha256  8116433f4004fc0c24d72b3d9e497808b724aa0e5e1cd63fc1bf66b715b1e2e9  LICENSES/LICENCE.Abilis
 diff --git a/package/linux-firmware/linux-firmware.mk b/package/linux-firmware/linux-firmware.mk
-index 6025436c..36812c79 100644
+index 6025436c84..88c56b4820 100644
 --- a/package/linux-firmware/linux-firmware.mk
 +++ b/package/linux-firmware/linux-firmware.mk
 @@ -4,7 +4,7 @@
@@ -122,12 +122,12 @@ index 6025436c..36812c79 100644
  ################################################################################
  
 -LINUX_FIRMWARE_VERSION = 20260810
-+LINUX_FIRMWARE_VERSION = 20261019
++LINUX_FIRMWARE_VERSION = 20261124
  LINUX_FIRMWARE_SOURCE = linux-firmware-$(LINUX_FIRMWARE_VERSION).tar.xz
  LINUX_FIRMWARE_SITE = $(BR2_KERNEL_MIRROR)/linux/kernel/firmware
  LINUX_FIRMWARE_INSTALL_IMAGES = YES
 diff --git a/package/tailscale/tailscale.hash b/package/tailscale/tailscale.hash
-index e2d600f0..e8bd7fdf 100644
+index e2d600f03e..e8bd7fdfc5 100644
 --- a/package/tailscale/tailscale.hash
 +++ b/package/tailscale/tailscale.hash
 @@ -1,3 +1,3 @@
@@ -138,7 +138,7 @@ index e2d600f0..e8bd7fdf 100644
 +sha256  78201376863bc0498dce908b8abefcba38520b697ca82d4968f9120c52517298  tailscale-1.104.7-go2.tar.gz
 +sha256  a7ca6186a7963a0a60740f6047760eecd7a0234e8c38bd7e1e0bbcb324bda45b  LICENSE
 diff --git a/package/tailscale/tailscale.mk b/package/tailscale/tailscale.mk
-index 86039fd4..7befbd81 100644
+index 86039fd4b1..7befbd81d7 100644
 --- a/package/tailscale/tailscale.mk
 +++ b/package/tailscale/tailscale.mk
 @@ -4,13 +4,17 @@

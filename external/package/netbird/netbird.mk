@@ -4,7 +4,7 @@
 #
 ################################################################################
 
-NETBIRD_VERSION = 0.83.1
+NETBIRD_VERSION = 0.83.2
 NETBIRD_SITE = $(call github,netbirdio,netbird,v$(NETBIRD_VERSION))
 NETBIRD_LICENSE = BSD-3-Clause
 NETBIRD_LICENSE_FILES = LICENSE

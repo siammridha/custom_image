@@ -7,6 +7,8 @@
 #   address   = 192.168.80.13     IP for scripts/deploy.sh and test-device.sh
 #   ssh_key   = <64 hex>          SSH host key: ed25519 seed (dropbear and NetBird SSH)
 #   netbird   = <base64>          NetBird WireGuard private key (default.json PrivateKey)
+#   update_token = <64 hex>       the device's token for the update server (raptor
+#                                 TargetToken; scripts/publish.sh)
 #   tailscale_state = <name>      tailscaled.state copied after the first login
 #                                 (by hand), as config/tailscale/<name>: the
 #                                 device keeps its Tailscale login. Empty: no
@@ -37,7 +39,7 @@ die() { echo "$F: $*" >&2; exit 1; }
 [ -f "$F" ] || die "no such file"
 . "$(dirname "$0")/config.sh"
 
-NAMES="model host address ssh_key netbird tailscale_state"
+NAMES="model host address ssh_key netbird update_token tailscale_state"
 BAD=$(grep -vE '^[ \t]*(#|$)' "$F" | tr -d '\r' |
 	grep -vE "^[ \t]*($(echo $NAMES | tr ' ' '|'))[ \t]*=" || true)
 [ -z "$BAD" ] || die "unknown line: $(echo "$BAD" | head -n 1) (names: $NAMES)"
@@ -47,6 +49,7 @@ done
 MODEL=$(get "$F" model); HOST=$(get "$F" host)
 SSH=$(get "$F" ssh_key); NB=$(get "$F" netbird)
 TSS=$(get "$F" tailscale_state)
+UT=$(get "$F" update_token)
 
 case $MODEL in 3040|5020) ;; *) die "model must be 3040 or 5020, not '$MODEL'" ;; esac
 echo "$HOST" | grep -qE '^[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?$' ||
@@ -75,6 +78,8 @@ hex32 "$SSH" || die "ssh_key must be 64 hex characters"
 if [ -z "$NB" ]; then NB=$(clamp "$(rand)" | b64); add netbird "$NB"; fi
 NBHEX=$(printf %s "$NB" | base64 -d 2>/dev/null | xxd -p -c 64) || true
 hex32 "$NBHEX" || die "netbird must be 32 bytes in base64"
+if [ -z "$UT" ]; then UT=$(rand); add update_token "$UT"; fi
+hex32 "$UT" || die "update_token must be 64 hex characters"
 # Only a check that it is a tailscaled.state (FileStore JSON with a machine key).
 if [ -n "$TSS" ]; then
 	TSS=$(dirname "$F")/../tailscale/$TSS
@@ -115,4 +120,6 @@ else
 	rm -f "$T/var/lib/tailscale/tailscaled.state" # from an earlier build
 fi
 echo "0000000b7373682d6564323535313900000040$SSH$PUB" | xxd -r -p | put /etc/wyse/dropbear_host_key
+# The update server token (wyse-init/src/update.rs sends it).
+printf '%s\n' "$UT" | put /etc/wyse/update.token
 echo "device-keys: ssh host key: ssh-ed25519 $(echo "0000000b7373682d6564323535313900000020$PUB" | b64)"

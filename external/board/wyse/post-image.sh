@@ -3,15 +3,17 @@ set -e
 B=$(dirname "$0")
 I=$BINARIES_DIR
 
-# GRUB config for UEFI (/EFI/BOOT) and BIOS (/boot/grub) boot.
+# Partition 1: GRUB's config for UEFI (/EFI/BOOT) and BIOS (/boot/grub) boot,
+# which only picks root a or b, and grubenv: GRUB's 1024-byte environment
+# block (grub-core/lib/envblk.c), padded with '#'. A new disk boots root a.
 mkdir -p "$I/efi-part/EFI/BOOT" "$I/efi-part/boot/grub"
-# Development builds: no "quiet", so all boot messages show on the monitor.
-if [ -s "$BASE_DIR/busybox-build.fragment" ]; then
-	sed 's/ quiet//' "$B/grub.cfg" > "$I/efi-part/EFI/BOOT/grub.cfg"
-else
-	cp "$B/grub.cfg" "$I/efi-part/EFI/BOOT/grub.cfg"
-fi
-cp "$I/efi-part/EFI/BOOT/grub.cfg" "$I/efi-part/boot/grub/grub.cfg"
+cp "$B/grub.cfg" "$I/efi-part/EFI/BOOT/grub.cfg"
+cp "$B/grub.cfg" "$I/efi-part/boot/grub/grub.cfg"
+H='# GRUB Environment Block
+slot=a
+'
+{ printf '%s' "$H"; head -c $((1024 - ${#H})) /dev/zero | tr '\0' '#'; } > "$I/efi-part/grubenv"
+[ "$(wc -c < "$I/efi-part/grubenv")" = 1024 ] || { echo "grubenv is not 1024 bytes"; exit 1; }
 
 # BIOS boot: MBR boot code loads the core image from LBA 34 (17K),
 # the core image loads the rest of itself from LBA 35 on.

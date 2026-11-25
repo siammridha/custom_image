@@ -2,13 +2,17 @@
 # First install, or full reinstall: write the whole disk.img to a running
 # Wyse over SSH, then reboot it.
 #
-#   scripts/install.sh <host name>
+#   scripts/install.sh <host name> [disk]
+#
+# disk (for example /dev/mmcblk0): only when the device runs from RAM, like
+# Alpine started from a USB stick. Otherwise it is the disk the device runs
+# from.
 #
 # The device must run Linux with SSH as root: Alpine, or this image.
 # Everything on its disk is lost, /data too. To update a device that runs
 # this image and keep /data, use scripts/deploy.sh.
 #
-# Sends disk.img.gz (made by ./build.sh; disk.img is 638 MB, mostly empty)
+# Sends disk.img.gz (made by ./build.sh; disk.img is about 360 MB, mostly empty)
 # and keeps it packed in a RAM folder on the device. A copied busybox (Alpine's,
 # as in deploy.sh) unpacks it onto the disk, so nothing is read from the
 # disk while it is being overwritten.
@@ -24,7 +28,9 @@ set -eu
 cd "$(dirname "$0")/.."
 CFG=config
 . scripts/config.sh
-H=${1:?usage: $0 <host name>}
+H=${1:?usage: $0 <host name> [disk]}
+WANT=${2:-}
+case $WANT in ''|/dev/[a-z]*[a-z0-9]) ;; *) echo "bad disk name: $WANT" >&2; exit 1 ;; esac
 DF=$(device_file "$H")
 MODEL=$(get "$DF" model)
 IP=$(get "$DF" address)
@@ -37,13 +43,14 @@ SSH="ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel
 
 # The disk the device runs from: the one holding its root (/rom on this
 # image, / on Alpine), its size in bytes and the BIOS model name.
-set -- $($SSH -n root@"$IP" 'r=/rom; mountpoint -q $r || r=/
+set -- $($SSH -n root@"$IP" "w=$WANT;"'if [ -n "$w" ]; then d=/sys/block/${w#/dev/}; [ -d $d ] || exit 0; else
+	r=/rom; mountpoint -q $r || r=/
 	p=$(readlink -f /sys/dev/block/$(mountpoint -d $r))
 	[ -f $p/partition ] || exit 0
-	d=$(dirname $p)
+	d=$(dirname $p); fi
 	echo /dev/$(basename $d) $(( $(cat $d/size) * 512 )) $(cat /sys/class/dmi/id/product_name)')
 DISK=${1:-}; DSIZE=${2:-0}; shift 2 || true; NAME="$*"
-[ -n "$DISK" ] || { echo "can't find the disk $IP runs from (is its root on a disk partition?)" >&2; exit 1; }
+[ -n "$DISK" ] || { echo "can't find the disk $IP runs from (is its root on a disk partition? If it runs from RAM, give the disk: $0 $H /dev/mmcblk0)" >&2; exit 1; }
 case "$NAME" in
 	*"$MODEL"*) ;;
 	*) echo "$IP is a \"$NAME\", not a Wyse $MODEL. Not installing." >&2; exit 1 ;;

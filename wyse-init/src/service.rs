@@ -2,7 +2,7 @@
 //! (respawn). When it exits, init starts it again.
 //!   - never killed when RAM runs out (oom_score_adj -1000), except apps
 //!   - in the vpn cgroup: top priority over the apps (prio.rs)
-use crate::{alpine, dhcp, guard, prio, sys};
+use crate::{alpine, dhcp, guard, prio, sys, update};
 use std::fs;
 use std::os::unix::process::CommandExt;
 use std::path::Path;
@@ -66,6 +66,7 @@ pub fn main(name: &str) {
             sys::nice(-10);
             guard::main();
         }
+        "update" => update::main(),
         "apps" => {
             // The Alpine subsystem, which starts the apps (alpine.rs).
             // Started after the VPNs.
