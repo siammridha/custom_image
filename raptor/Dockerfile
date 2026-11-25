@@ -13,7 +13,9 @@ ARG RAPTOR_VERSION=1.3.2
 
 # 1. The web page, on Debian like raptor's release (Ubuntu): dx downloads
 # wasm-bindgen and tailwindcss built for glibc, which don't run on Alpine.
-FROM rust:1.99.1-trixie AS ui
+# The page is the same on every CPU, so this stage runs on the build
+# machine's own CPU (no emulation when an arm64 Mac builds the x86 image).
+FROM --platform=$BUILDPLATFORM rust:1.99.1-trixie AS ui
 ARG RAPTOR_VERSION
 # dioxus-cli version from raptor's mise.toml (must equal raptor-ui's dioxus)
 RUN cargo install dioxus-cli --version 0.7.10 --locked
