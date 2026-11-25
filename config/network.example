@@ -12,4 +12,4 @@ netbird_key   =
 update_url       = http://172.22.0.10:8088
 # The update server's web page and API on the local network, used by
 # scripts/publish.sh (login in config/raptor)
-update_admin_url = https://updates.example.com
+update_admin_url = https://raptor.example.com
