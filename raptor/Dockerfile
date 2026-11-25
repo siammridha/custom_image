@@ -34,6 +34,10 @@ WORKDIR /src
 RUN rustup toolchain install
 # embed-ui reads the page from here (raptor/src/ui.rs)
 COPY --from=ui /src/target/dx/raptor-ui/release/web/public target/dx/raptor-ui/release/web/public
+# chacha20 0.10.1 (yanked) uses an SSE4.1 instruction in its SSE2 code, so
+# raptor crashes (invalid opcode) on the home server's CPU (AMD G-T48E, no
+# SSE4.1) when it makes a login session. 0.10.2 fixes it.
+RUN cargo update -p chacha20 --precise 0.10.2
 RUN cargo build --release --locked -p raptor --features embed-ui
 
 FROM alpine:3.23
