@@ -1,0 +1,49 @@
+name: Build raptor image
+
+# Builds raptor/Dockerfile and pushes ghcr.io/siammridha/raptor:<version>
+# (the version is RAPTOR_VERSION in the Dockerfile) and :latest. Runs when
+# the Dockerfile or this file changes on master, or by hand (Actions tab, Run
+# workflow). Same steps as simple_rtc's docker-build.yml.
+on:
+  push:
+    branches: [master]
+    paths:
+      - "raptor/Dockerfile"
+      - ".github/workflows/raptor.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Read version
+        id: version
+        run: |
+          v=$(sed -n "s/^ARG RAPTOR_VERSION=//p" raptor/Dockerfile)
+          [ -n "$v" ] || { echo "::error::no ARG RAPTOR_VERSION= in raptor/Dockerfile"; exit 1; }
+          echo "version=$v" >> "$GITHUB_OUTPUT"
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/build-push-action@v6
+        with:
+          context: raptor
+          push: true
+          tags: |
+            ghcr.io/siammridha/raptor:${{ steps.version.outputs.version }}
+            ghcr.io/siammridha/raptor:latest
+          # Keeps the Rust build steps between runs
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
